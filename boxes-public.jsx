@@ -1,6 +1,6 @@
 // boxes-public.jsx — Public (QR-linked) recipe landing page
 
-function PublicRecipePage({ theme, box, onClose }) {
+function PublicRecipePage({ theme, box, onClose, isPreview = true }) {
   const [lang, setLang] = useState('en');
   const [activeIdx, setActiveIdx] = useState(0);
   if (!box) return null;
@@ -48,24 +48,26 @@ function PublicRecipePage({ theme, box, onClose }) {
       background: theme.bg, minHeight: '100vh',
       padding: '0', fontFamily: theme.body, color: theme.ink,
     }}>
-      {/* Staff-only top bar — shown because this is a preview inside the app */}
-      <div style={{
-        background: theme.ink, color: theme.paper,
-        padding: '10px 24px',
-        display: 'flex', alignItems: 'center', gap: 14,
-        fontFamily: theme.mono, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em',
-      }}>
-        <span style={{ opacity: 0.55 }}>Preview · public recipe page</span>
-        <span style={{ opacity: 0.4 }}>·</span>
-        <span>{getPublicUrl(box.id)}</span>
-        <div style={{ flex: 1 }} />
-        <button onClick={onClose} style={{
-          background: 'transparent', border: '1px solid rgba(255,255,255,0.2)',
-          color: theme.paper, padding: '5px 12px', borderRadius: 6,
-          cursor: 'pointer', fontFamily: theme.mono, fontSize: 11,
-          textTransform: 'uppercase', letterSpacing: '0.1em',
-        }}>Close preview ×</button>
-      </div>
+      {/* Staff-only preview bar — only visible inside the staff app */}
+      {isPreview && (
+        <div style={{
+          background: theme.ink, color: theme.paper,
+          padding: '10px 24px',
+          display: 'flex', alignItems: 'center', gap: 14,
+          fontFamily: theme.mono, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em',
+        }}>
+          <span style={{ opacity: 0.55 }}>Preview · public recipe page</span>
+          <span style={{ opacity: 0.4 }}>·</span>
+          <span>{getPublicUrl(box.id)}</span>
+          <div style={{ flex: 1 }} />
+          <button onClick={onClose} style={{
+            background: 'transparent', border: '1px solid rgba(255,255,255,0.2)',
+            color: theme.paper, padding: '5px 12px', borderRadius: 6,
+            cursor: 'pointer', fontFamily: theme.mono, fontSize: 11,
+            textTransform: 'uppercase', letterSpacing: '0.1em',
+          }}>Close preview ×</button>
+        </div>
+      )}
 
       {/* Mobile-first content centered in a card */}
       <div style={{
