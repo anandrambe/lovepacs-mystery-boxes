@@ -142,46 +142,65 @@ function BoxDetailPanel({ theme, box, onClose, onAdvance, onOpenPublic, onPrint 
             <div style={{ padding: '24px 28px 40px', overflowY: 'auto' }}>
               <SectionHeader theme={theme}>Generated recipes ({recipes.length})</SectionHeader>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {recipes.map(r => (
+                {recipes.map(r => {
+                  // Map recipe IDs to hero photos; hash-based fallback for any extras
+                  const HERO = {
+                    'pantry-spag':  'assets/recipe-spaghetti.jpg',
+                    'arroz-frijol': 'assets/recipe-ricebowl.jpg',
+                    'oven-bake':    'assets/recipe-ricebowl.jpg',
+                    'cowboy':       'assets/recipe-salad.jpg',
+                  };
+                  const FALLBACKS = [
+                    'assets/recipe-spaghetti.jpg',
+                    'assets/recipe-salad.jpg',
+                    'assets/recipe-ricebowl.jpg',
+                  ];
+                  const fIdx = Math.abs(Array.from(r.id).reduce((a, c) => a + c.charCodeAt(0), 0)) % FALLBACKS.length;
+                  const heroSrc = HERO[r.id] || FALLBACKS[fIdx];
+
+                  return (
                   <button key={r.id} onClick={() => setRecipeId(r.id)} style={{
-                    textAlign: 'left', padding: 16, borderRadius: 14,
+                    textAlign: 'left', padding: 0, borderRadius: 14,
                     border: `1px solid ${theme.line}`, background: theme.paper,
-                    cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14,
+                    cursor: 'pointer', display: 'flex', alignItems: 'stretch', gap: 0,
+                    overflow: 'hidden',
                     transition: 'border-color 140ms, background 140ms',
                   }}
-                  onMouseEnter={e => e.currentTarget.style.background = theme.bg}
-                  onMouseLeave={e => e.currentTarget.style.background = theme.paper}>
+                  onMouseEnter={e => e.currentTarget.style.borderColor = theme.accent}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = theme.line}>
+                    {/* Photo thumbnail */}
                     <div style={{
-                      width: 56, height: 56, borderRadius: 12, flexShrink: 0,
-                      position: 'relative', overflow: 'hidden',
-                      background: `radial-gradient(at 30% 30%, ${theme.soft}, ${theme.bg})`,
-                      border: `1px solid ${theme.line}`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      width: 72, flexShrink: 0,
+                      background: '#1f1a14',
+                      overflow: 'hidden',
                     }}>
-                      <svg viewBox="0 0 40 40" width="40" height="40" style={{ position: 'absolute', inset: 6 }}>
-                        <ellipse cx="20" cy="22" rx="15" ry="9" fill={theme.paper} stroke={theme.line} strokeWidth="0.8"/>
-                        <ellipse cx="20" cy="22" rx="11" ry="6" fill="none" stroke={theme.accent} strokeOpacity="0.4" strokeWidth="0.7"/>
-                      </svg>
-                      <div style={{
-                        position: 'relative', zIndex: 1,
-                        fontFamily: theme.display, fontSize: 20, fontWeight: theme.displayWeight,
-                        color: theme.accent, letterSpacing: theme.displayTracking,
-                      }}>{r.title.en[0]}</div>
+                      <img
+                        src={heroSrc}
+                        alt={r.title.en}
+                        style={{
+                          width: '100%', height: '100%',
+                          objectFit: 'cover', objectPosition: 'center',
+                          display: 'block',
+                        }}
+                      />
                     </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{
-                        fontFamily: theme.display, fontWeight: theme.displayWeight, fontSize: 17,
-                        letterSpacing: theme.displayTracking,
-                      }}>{r.title.en}</div>
-                      <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-                        <Chip theme={theme} tone="soft">{r.time}</Chip>
-                        <Chip theme={theme} tone="soft">Serves {r.servings}</Chip>
-                        {r.missing && <Chip theme={theme} tone="missing">+ {r.missing.en}</Chip>}
+                    <div style={{ flex: 1, minWidth: 0, padding: '14px 12px 14px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{
+                          fontFamily: theme.display, fontWeight: theme.displayWeight, fontSize: 16,
+                          letterSpacing: theme.displayTracking, lineHeight: 1.25,
+                        }}>{r.title.en}</div>
+                        <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                          <Chip theme={theme} tone="soft">{r.time}</Chip>
+                          <Chip theme={theme} tone="soft">Serves {r.servings}</Chip>
+                          {r.missing && <Chip theme={theme} tone="missing">+ {r.missing.en}</Chip>}
+                        </div>
                       </div>
+                      {Icon.arrowR(theme.muted)}
                     </div>
-                    {Icon.arrowR(theme.muted)}
                   </button>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
