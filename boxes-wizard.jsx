@@ -1619,7 +1619,7 @@ function LabelScreen({ theme, box, onDone, fromList }) {
         </div>
         <div style={{ display: 'flex', gap: 12, marginTop: 4 }}>
           <Button theme={theme} kind="secondary" size="md" onClick={onDone}>
-            {fromList ? '← Back to list' : 'Go to Love Boxes →'}
+            {fromList ? '← Back to order' : 'Go to Love Boxes →'}
           </Button>
           <Button theme={theme} kind="primary" size="md" icon={Icon.print(theme.accentInk)} onClick={handlePrint}>
             Print Label

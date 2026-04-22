@@ -265,7 +265,7 @@ function MysteryBoxesScreen({ theme, warehouse, onStartMenu, openWizard, onWizar
           onClose={() => setSelectedId(null)}
           onAdvance={(to) => advanceStatus(selected.id, to)}
           onOpenPublic={() => { setPublicBoxId(selected.id); setMode('public'); }}
-          onPrint={() => { setSelectedId(null); setPrintBox(selected); }}
+          onPrint={() => setPrintBox(selected)}
         />
       )}
     </div>

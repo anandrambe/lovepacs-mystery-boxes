@@ -87,9 +87,9 @@ function BoxDetailPanel({ theme, box, onClose, onAdvance, onOpenPublic, onPrint 
             <div style={{ padding: '24px 28px 40px', borderRight: `1px solid ${theme.line}`, overflowY: 'auto' }}>
               {/* Stats */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 24 }}>
-                <MiniStat theme={theme} label="Families" value={box.families} />
-                <MiniStat theme={theme} label="4-person meals" value={box.meals4p} accent />
-                <MiniStat theme={theme} label="2-person meals" value={box.meals2p} />
+                <MiniStat theme={theme} label="Recipes" value={recipes.length} accent />
+                <MiniStat theme={theme} label="Food items" value={box.items.length} />
+                <MiniStat theme={theme} label="Units packed" value={box.items.reduce((s, i) => s + i.qty, 0)} />
               </div>
 
               {/* QR block */}
@@ -252,58 +252,97 @@ function RecipeDetailSubPanel({ theme, recipe, onClose }) {
   const boxIngs = recipe.ingredients.filter(i => i.source === 'box');
   const staples = recipe.ingredients.filter(i => i.source === 'staple');
   const missing = recipe.ingredients.filter(i => i.source === 'missing');
+
+  const HERO = {
+    'pantry-spag':  'assets/recipe-spaghetti.jpg',
+    'arroz-frijol': 'assets/recipe-ricebowl.jpg',
+    'oven-bake':    'assets/recipe-ricebowl.jpg',
+    'cowboy':       'assets/recipe-salad.jpg',
+  };
+  const FALLBACKS = ['assets/recipe-spaghetti.jpg', 'assets/recipe-salad.jpg', 'assets/recipe-ricebowl.jpg'];
+  const fIdx = Math.abs(Array.from(recipe.id).reduce((a, c) => a + c.charCodeAt(0), 0)) % FALLBACKS.length;
+  const heroSrc = HERO[recipe.id] || FALLBACKS[fIdx];
+
   return (
     <>
       <div onClick={onClose} style={{
         position: 'absolute', inset: 0, background: 'rgba(18,22,20,0.18)', zIndex: 2,
       }} />
       <div style={{
-        position: 'absolute', top: 0, right: 0, height: '100%', width: '96%',
+        position: 'absolute', top: 0, right: 0, height: '100%', width: 440,
         background: theme.paper, borderLeft: `1px solid ${theme.line}`,
         zIndex: 3, display: 'flex', flexDirection: 'column',
-        boxShadow: '-24px 0 40px -20px rgba(0,0,0,0.25)',
+        boxShadow: '-20px 0 48px -16px rgba(0,0,0,0.22)',
         animation: 'slideIn 220ms cubic-bezier(0.2, 0.8, 0.2, 1)',
       }}>
-        <div style={{ padding: '18px 22px', borderBottom: `1px solid ${theme.line}`, display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button onClick={onClose} style={{
-            background: 'transparent', border: 'none', cursor: 'pointer',
-            fontSize: 13, color: theme.muted, display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '6px 8px', borderRadius: 6, fontFamily: theme.body,
-          }}>← Back</button>
-          <div style={{ flex: 1 }} />
+
+        {/* Hero image with overlaid back button + lang toggle */}
+        <div style={{ position: 'relative', height: 180, flexShrink: 0, background: '#1f1a14', overflow: 'hidden' }}>
+          <img src={heroSrc} alt={recipe.title.en} style={{
+            position: 'absolute', inset: 0, width: '100%', height: '100%',
+            objectFit: 'cover', objectPosition: 'center',
+          }} />
+          {/* Gradient so controls are readable over photo */}
           <div style={{
-            display: 'inline-flex', background: theme.bg, borderRadius: 8, padding: 2,
-            border: `1px solid ${theme.line}`,
+            position: 'absolute', inset: 0,
+            background: 'linear-gradient(to bottom, rgba(0,0,0,0.45) 0%, transparent 55%, rgba(0,0,0,0.35) 100%)',
+          }} />
+          {/* Top row: back + lang */}
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0,
+            padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           }}>
-            {['en', 'es'].map(l => (
-              <button key={l} onClick={() => setLang(l)} style={{
-                padding: '4px 10px', borderRadius: 6, border: 'none',
-                background: lang === l ? theme.paper : 'transparent',
-                fontFamily: theme.mono, fontSize: 11, textTransform: 'uppercase',
-                letterSpacing: '0.1em', cursor: 'pointer', color: theme.ink,
-                fontWeight: lang === l ? 600 : 400,
-                boxShadow: lang === l ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
-              }}>{l}</button>
-            ))}
+            <button onClick={onClose} style={{
+              background: 'rgba(0,0,0,0.32)', border: '1px solid rgba(255,255,255,0.18)',
+              borderRadius: 8, cursor: 'pointer', color: '#fff',
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '6px 12px', fontSize: 12, fontFamily: theme.body, backdropFilter: 'blur(4px)',
+            }}>← Back</button>
+            <div style={{
+              display: 'inline-flex', background: 'rgba(0,0,0,0.32)',
+              borderRadius: 8, padding: 2, border: '1px solid rgba(255,255,255,0.18)',
+              backdropFilter: 'blur(4px)',
+            }}>
+              {['en', 'es'].map(l => (
+                <button key={l} onClick={() => setLang(l)} style={{
+                  padding: '4px 10px', borderRadius: 6, border: 'none',
+                  background: lang === l ? 'rgba(255,255,255,0.92)' : 'transparent',
+                  fontFamily: theme.mono, fontSize: 11, textTransform: 'uppercase',
+                  letterSpacing: '0.1em', cursor: 'pointer',
+                  color: lang === l ? theme.ink : 'rgba(255,255,255,0.8)',
+                  fontWeight: lang === l ? 600 : 400,
+                }}>{l}</button>
+              ))}
+            </div>
+          </div>
+          {/* Title overlay at bottom of image */}
+          <div style={{
+            position: 'absolute', bottom: 0, left: 0, right: 0,
+            padding: '12px 18px 14px',
+          }}>
+            <div style={{
+              fontFamily: theme.display, fontWeight: theme.displayWeight,
+              fontSize: 22, letterSpacing: theme.displayTracking, lineHeight: 1.15,
+              color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,0.4)',
+              textWrap: 'pretty',
+            }}>{recipe.title[lang]}</div>
+            {lang === 'en' && (
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', fontStyle: 'italic', marginTop: 2 }}>
+                {recipe.title.es}
+              </div>
+            )}
           </div>
         </div>
 
-        <div style={{ flex: 1, overflow: 'auto', padding: '22px 24px 40px' }}>
-          <div style={{
-            fontFamily: theme.display, fontWeight: theme.displayWeight,
-            fontSize: 28, letterSpacing: theme.displayTracking, lineHeight: 1.1,
-          }}>{recipe.title[lang]}</div>
-          {lang === 'en' && (
-            <div style={{ fontSize: 13, color: theme.muted, fontStyle: 'italic', marginTop: 4 }}>{recipe.title.es}</div>
-          )}
+        {/* Chips row */}
+        <div style={{ padding: '12px 18px', borderBottom: `1px solid ${theme.line}`, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <Chip theme={theme} tone="soft">{Icon.clock(theme.muted)} {recipe.time}</Chip>
+          <Chip theme={theme} tone="soft">Serves {recipe.servings}</Chip>
+          {recipe.tags.map((t, i) => <Chip key={i} theme={theme} tone="soft">{t}</Chip>)}
+        </div>
 
-          <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
-            <Chip theme={theme} tone="soft">{Icon.clock(theme.muted)} {recipe.time}</Chip>
-            <Chip theme={theme} tone="soft">Serves {recipe.servings}</Chip>
-            {recipe.tags.map((t, i) => <Chip key={i} theme={theme} tone="soft">{t}</Chip>)}
-          </div>
-
-          <div style={{ marginTop: 22, display: 'grid', gridTemplateColumns: '1fr', gap: 18 }}>
+        <div style={{ flex: 1, overflow: 'auto', padding: '20px 20px 40px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 18 }}>
             {/* Ingredients */}
             <div style={{ padding: 16, background: theme.bg, borderRadius: 12, border: `1px solid ${theme.line}` }}>
               <SectionHeader theme={theme}>Ingredients</SectionHeader>
