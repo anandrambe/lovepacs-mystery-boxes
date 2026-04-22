@@ -57,7 +57,7 @@ function PublicRecipePage({ theme, box, onClose }) {
       }}>
         <span style={{ opacity: 0.55 }}>Preview · public recipe page</span>
         <span style={{ opacity: 0.4 }}>·</span>
-        <span>{box.qrUrl}</span>
+        <span>{getPublicUrl(box.id)}</span>
         <div style={{ flex: 1 }} />
         <button onClick={onClose} style={{
           background: 'transparent', border: '1px solid rgba(255,255,255,0.2)',
@@ -283,7 +283,7 @@ function PublicRecipePage({ theme, box, onClose }) {
           }}>
             <div>{t.footer}</div>
             <div style={{ fontFamily: theme.mono, fontSize: 10, marginTop: 8, letterSpacing: '0.08em' }}>
-              {box.qrUrl}
+              {getPublicUrl(box.id)}
             </div>
           </div>
         </div>

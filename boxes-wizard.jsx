@@ -84,13 +84,11 @@ function BoxWizard({ theme, onCancel, onSave }) {
 
   const finalize = () => {
     const id = boxLabel.trim() || `MB-2026-${Math.floor(Math.random() * 900 + 100)}`;
-    const qrUrl = `lovepacs.org/b/mb-${region.toLowerCase().slice(0, 3)}-${id.slice(-4)}`;
     const box = {
       id, region, address: address || '—', event, dispatchDate,
       families, meals4p, meals2p,
       recipesCount: selectedRecipes.length,
       status: 'Finalized',
-      qrUrl,
       items, recipes: selectedRecipes,
       notes: boxNotes, printed: false,
     };
@@ -1563,11 +1561,11 @@ function LabelPrintSheet({ box }) {
           background: '#ffffff',
         }}>
           <div style={{ padding: 5, border: '1.5px solid #e0e0e0', borderRadius: 8, background: '#fff' }}>
-            <QR size={86} seed={box.qrUrl || box.id} color="#000" bg="#fff" />
+            <QR size={86} seed={getPublicUrl(box.id)} color="#000" bg="#fff" />
           </div>
           <div style={{ fontSize: 8, color: '#888', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>Scan for recipes</div>
           <div style={{ fontSize: 7.5, color: '#666', fontFamily: 'monospace', textAlign: 'center', wordBreak: 'break-all', maxWidth: 100 }}>
-            {box.qrUrl || `lovepacs.org/b/${box.id}`}
+            {getPublicUrl(box.id)}
           </div>
         </div>
       </div>
