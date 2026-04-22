@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lovepacs Recipe Generator — Prototype</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=DM+Serif+Display&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg, #F6F1E8);
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    color: #2B1F17;
+    min-height: 100vh;
+  }
+  @keyframes scanline {
+    0%, 100% { transform: translateY(-14px); }
+    50% { transform: translateY(14px); }
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 0.9; }
+    50% { transform: scale(1.08); opacity: 1; }
+  }
+  @keyframes fill {
+    0%, 100% { opacity: 0.3; transform: scaleX(0.3); }
+    50% { opacity: 1; transform: scaleX(1); }
+  }
+  button { font: inherit; }
+  input, select { font: inherit; }
+  ::selection { background: rgba(11,59,46,0.22); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="app.jsx"></script>
+<script type="text/babel" src="data.jsx"></script>
+<script type="text/babel" src="components/ios-frame.jsx"></script>
+<script type="text/babel" src="shared.jsx"></script>
+<script type="text/babel" src="staff.jsx"></script>
+<script type="text/babel" src="picker.jsx"></script>
+<script type="text/babel" src="sidebar.jsx"></script>
+<script type="text/babel" src="dashboard.jsx"></script>
+<script type="text/babel" src="client.jsx"></script>
+<script type="text/babel" src="boxes-data.jsx"></script>
+<script type="text/babel" src="boxes-list.jsx"></script>
+<script type="text/babel" src="boxes-wizard.jsx"></script>
+<script type="text/babel" src="boxes-detail.jsx"></script>
+<script type="text/babel" src="boxes-public.jsx"></script>
+
+<script type="text/babel">
+  const { useState, useEffect, useMemo } = React;
+
+  function Root() {
+    const [tweaks, setTweaks] = useState(TWEAKS);
+    const [editMode, setEditMode] = useState(false);
+    const [nav, setNav] = useState('dashboard');
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    const [openBoxWizard, setOpenBoxWizard] = useState(false);
+
+    // Edit mode protocol
+    useEffect(() => {
+      const onMsg = (e) => {
+        const d = e.data;
+        if (!d || typeof d !== 'object') return;
+        if (d.type === '__activate_edit_mode') setEditMode(true);
+        if (d.type === '__deactivate_edit_mode') setEditMode(false);
+      };
+      window.addEventListener('message', onMsg);
+      window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+      return () => window.removeEventListener('message', onMsg);
+    }, []);
+
+    const update = (patch) => {
+      const next = { ...tweaks, ...patch };
+      setTweaks(next);
+      window.parent.postMessage({ type: '__edit_mode_set_keys', edits: patch }, '*');
+    };
+
+    const palette = PALETTES[tweaks.palette] || PALETTES.terracotta;
+    const type = TYPE[tweaks.typography] || TYPE['serif-sans'];
+    const theme = useT(palette, type);
+
+    useEffect(() => {
+      document.body.style.background = palette.bg;
+      document.body.style.color = palette.ink;
+      document.body.style.fontFamily = type.body;
+    }, [palette, type]);
+
+    const density = tweaks.density === 'compact' ? 0.88 : 1;
+    const warehouse = 'Frisco';
+
+    const title = {
+      dashboard: 'Dashboard',
+      inventory: 'Inventory',
+      boxes: 'Love Boxes',
+      menu: 'Menu Generator',
+    }[nav];
+
+    return (
+      <div style={{
+        minHeight: '100vh',
+        fontFamily: type.body,
+        background: palette.bg,
+        display: 'flex',
+      }}>
+        <Sidebar
+          theme={theme}
+          collapsed={sidebarCollapsed}
+          onToggle={() => setSidebarCollapsed(c => !c)}
+          active={nav}
+          onNavigate={setNav}
+          warehouse={warehouse}
+        />
+
+        <main style={{ flex: 1, minWidth: 0, overflowX: 'auto' }}>
+          {/* Page body */}
+          <div style={{
+            transform: `scale(${density})`, transformOrigin: 'top left',
+          }} data-screen-label={`${nav === 'menu' ? '04' : nav === 'boxes' ? '03' : nav === 'inventory' ? '02' : '01'} ${title}`}>
+            {nav === 'dashboard' && (
+              <DashboardScreen theme={theme} warehouse={warehouse} onStartMenu={() => { setOpenBoxWizard(true); setNav('boxes'); }} />
+            )}
+            {nav === 'inventory' && (
+              <InventoryScreen theme={theme} warehouse={warehouse} />
+            )}
+            {nav === 'boxes' && (
+              <MysteryBoxesScreen theme={theme} warehouse={warehouse} onStartMenu={() => setNav('menu')}
+                openWizard={openBoxWizard} onWizardOpened={() => setOpenBoxWizard(false)} />
+            )}
+            {nav === 'menu' && (
+              <div style={{ padding: '24px 28px 48px' }}>
+                <StaffApp theme={theme} cardLayout={tweaks.cardLayout} />
+              </div>
+            )}
+          </div>
+        </main>
+
+        {editMode && (
+          <TweaksPanel tweaks={tweaks} update={update} theme={theme} />
+        )}
+      </div>
+    );
+  }
+
+  function PanelLabel({ theme, children }) {
+    return (
+      <div style={{
+        fontFamily: theme.mono, fontSize: 11, color: theme.muted,
+        textTransform: 'uppercase', letterSpacing: '0.12em',
+        marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10,
+      }}>
+        <div style={{ width: 16, height: 1, background: theme.line }} />
+        {children}
+      </div>
+    );
+  }
+
+  function Note({ theme, num, title, children }) {
+    return (
+      <div style={{
+        padding: 18, borderRadius: 14,
+        background: theme.paper, border: `1px solid ${theme.line}`,
+      }}>
+        <div style={{ fontFamily: theme.mono, fontSize: 11, color: theme.muted, letterSpacing: '0.1em' }}>{num}</div>
+        <div style={{
+          fontFamily: theme.display, fontWeight: theme.displayWeight,
+          fontSize: 17, letterSpacing: theme.displayTracking, marginTop: 8,
+        }}>{title}</div>
+        <div style={{ fontSize: 13, color: theme.muted, marginTop: 6, lineHeight: 1.55 }}>{children}</div>
+      </div>
+    );
+  }
+
+  function TweaksPanel({ tweaks, update, theme }) {
+    return (
+      <div style={{
+        position: 'fixed', right: 24, bottom: 24, zIndex: 100,
+        width: 280, padding: 18,
+        background: theme.paper, borderRadius: 16,
+        border: `1px solid ${theme.line}`,
+        boxShadow: '0 20px 50px -20px rgba(0,0,0,0.25)',
+        fontFamily: theme.body,
+      }}>
+        <div style={{
+          fontFamily: theme.display, fontWeight: theme.displayWeight,
+          fontSize: 18, letterSpacing: theme.displayTracking, marginBottom: 4,
+        }}>Tweaks</div>
+        <div style={{ fontSize: 11, color: theme.muted, marginBottom: 16, fontFamily: theme.mono, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+          Live knobs
+        </div>
+        <TweakGroup label="Palette" theme={theme}>
+          <Seg theme={theme} value={tweaks.palette} onChange={v => update({ palette: v })}
+            options={Object.entries(PALETTES).map(([k, p]) => ({ value: k, label: p.name, swatch: p.accent }))} />
+        </TweakGroup>
+        <TweakGroup label="Typography" theme={theme}>
+          <Seg theme={theme} value={tweaks.typography} onChange={v => update({ typography: v })}
+            options={Object.entries(TYPE).map(([k, t]) => ({ value: k, label: t.name }))} />
+        </TweakGroup>
+        <TweakGroup label="Recipe card layout" theme={theme}>
+          <Seg theme={theme} value={tweaks.cardLayout} onChange={v => update({ cardLayout: v })}
+            options={[
+              { value: 'magazine', label: 'Magazine' },
+              { value: 'compact', label: 'Compact' },
+              { value: 'list', label: 'List' },
+            ]} />
+        </TweakGroup>
+        <TweakGroup label="Density" theme={theme}>
+          <Seg theme={theme} value={tweaks.density} onChange={v => update({ density: v })}
+            options={[{ value: 'roomy', label: 'Roomy' }, { value: 'compact', label: 'Compact' }]} />
+        </TweakGroup>
+      </div>
+    );
+  }
+
+  function TweakGroup({ label, children, theme }) {
+    return (
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 11, color: theme.muted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: theme.mono }}>{label}</div>
+        {children}
+      </div>
+    );
+  }
+
+  function Seg({ theme, value, onChange, options }) {
+    return (
+      <div style={{
+        display: 'flex', flexDirection: 'column', gap: 4,
+        background: theme.bg, borderRadius: 10, padding: 4,
+        border: `1px solid ${theme.line}`,
+      }}>
+        {options.map(o => (
+          <button key={o.value} onClick={() => onChange(o.value)} style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '7px 10px', borderRadius: 7,
+            border: 'none', textAlign: 'left', cursor: 'pointer',
+            background: value === o.value ? theme.paper : 'transparent',
+            boxShadow: value === o.value ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+            color: theme.ink, fontSize: 12.5, fontFamily: theme.body,
+            fontWeight: value === o.value ? 600 : 400,
+          }}>
+            {o.swatch && <div style={{ width: 10, height: 10, borderRadius: 999, background: o.swatch }} />}
+            <span style={{ flex: 1 }}>{o.label}</span>
+            {value === o.value && <span style={{ fontSize: 10, color: theme.accent, fontFamily: theme.mono }}>●</span>}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<Root />);
+</script>
+</body>
+</html>

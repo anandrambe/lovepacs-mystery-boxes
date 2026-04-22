@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npx --version)",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "Bash(npx netlify-cli *)",
+      "Bash(gh auth *)"
+    ]
+  }
+}
