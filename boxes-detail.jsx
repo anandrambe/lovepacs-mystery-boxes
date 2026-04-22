@@ -16,46 +16,55 @@ function BoxDetailPanel({ theme, box, onClose, onAdvance, onOpenPublic, onPrint 
     'Printed':    'Mark as dispatched',
   }[box.status];
 
-  return (
+  // Render via portal so position:fixed is relative to the true viewport,
+  // not the transform:scale() ancestor in the main layout.
+  return ReactDOM.createPortal(
     <>
       <div onClick={onClose} style={{
         position: 'fixed', inset: 0, background: 'rgba(18,22,20,0.32)',
         zIndex: 40, animation: 'fadeIn 180ms ease-out',
       }} />
       <aside style={{
-        position: 'fixed', top: 0, right: 0, height: '100vh', width: 620,
+        position: 'fixed', top: 0, right: 0, bottom: 0, left: 248,
         background: theme.paper, borderLeft: `1px solid ${theme.line}`,
         zIndex: 50, display: 'flex', flexDirection: 'column',
-        boxShadow: '-24px 0 50px -20px rgba(0,0,0,0.25)',
-        animation: 'slideIn 260ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+        boxShadow: '-24px 0 60px -20px rgba(0,0,0,0.2)',
+        animation: 'slideIn 280ms cubic-bezier(0.2, 0.8, 0.2, 1)',
       }}>
         <style>{`
-          @keyframes slideIn { from { transform: translateX(40px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-          @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+          @keyframes slideIn { from { transform: translateX(32px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+          @keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
         `}</style>
 
         {/* Header */}
-        <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${theme.line}` }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ fontFamily: theme.mono, fontSize: 11, color: theme.muted, textTransform: 'uppercase', letterSpacing: '0.12em' }}>
-                {box.region} · {new Date(box.dispatchDate + 'T00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+        <div style={{ padding: '24px 36px 20px', borderBottom: `1px solid ${theme.line}`, flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 24 }}>
+            {/* Left: ID + meta */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontFamily: theme.mono, fontSize: 11, color: theme.muted, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 6 }}>
+                {box.region} · {new Date(box.dispatchDate + 'T00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
               </div>
+              <div style={{
+                fontFamily: theme.display, fontWeight: theme.displayWeight,
+                fontSize: 32, letterSpacing: theme.displayTracking, lineHeight: 1.05,
+              }}>{box.id}</div>
+              <div style={{ fontSize: 14, color: theme.muted, marginTop: 5 }}>{box.event}{box.address && box.address !== '—' ? ` · ${box.address}` : ''}</div>
             </div>
-            <button onClick={onClose} style={{
-              width: 32, height: 32, borderRadius: 8, border: `1px solid ${theme.line}`,
-              background: 'transparent', cursor: 'pointer', color: theme.muted,
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            }}>{Icon.close(theme.muted)}</button>
+            {/* Right: actions + close */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+              {onPrint && (
+                <Button theme={theme} kind="secondary" size="sm" icon={Icon.print(theme.ink)} onClick={onPrint}>Print Label</Button>
+              )}
+              <button onClick={onClose} style={{
+                width: 34, height: 34, borderRadius: 8, border: `1px solid ${theme.line}`,
+                background: 'transparent', cursor: 'pointer', color: theme.muted,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              }}>{Icon.close(theme.muted)}</button>
+            </div>
           </div>
-          <div style={{
-            fontFamily: theme.display, fontWeight: theme.displayWeight,
-            fontSize: 26, letterSpacing: theme.displayTracking, lineHeight: 1.1,
-          }}>{box.id}</div>
-          <div style={{ fontSize: 13, color: theme.muted, marginTop: 4 }}>{box.event} · {box.address}</div>
 
-          {/* Status stepper */}
-          <div style={{ marginTop: 18, padding: '14px 16px', borderRadius: 12, background: theme.bg, border: `1px solid ${theme.line}` }}>
+          {/* Status stepper — full width */}
+          <div style={{ marginTop: 20, padding: '14px 18px', borderRadius: 12, background: theme.bg, border: `1px solid ${theme.line}` }}>
             <StatusStepper status={box.status} theme={theme} />
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 }}>
               <div style={{ fontSize: 12, color: theme.muted }}>
@@ -70,106 +79,112 @@ function BoxDetailPanel({ theme, box, onClose, onAdvance, onOpenPublic, onPrint 
           </div>
         </div>
 
-        {/* Body */}
-        <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px 40px' }}>
-          {/* Stats grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 22 }}>
-            <MiniStat theme={theme} label="Families" value={box.families} />
-            <MiniStat theme={theme} label="4-person meals" value={box.meals4p} accent />
-            <MiniStat theme={theme} label="2-person meals" value={box.meals2p} />
-          </div>
+        {/* Body — two-column layout */}
+        <div style={{ flex: 1, overflow: 'auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0, height: '100%' }}>
 
-          {/* QR action */}
-          {box.qrUrl && (
-            <div style={{
-              padding: 14, borderRadius: 12, background: theme.bg,
-              border: `1px solid ${theme.line}`, marginBottom: 22,
-              display: 'flex', alignItems: 'center', gap: 14,
-            }}>
-              <div style={{ padding: 4, background: '#fff', border: `1px solid ${theme.line}`, borderRadius: 6 }}>
-                <QR size={54} seed={box.id} />
+            {/* Left column: stats + QR + contents */}
+            <div style={{ padding: '24px 28px 40px', borderRight: `1px solid ${theme.line}`, overflowY: 'auto' }}>
+              {/* Stats */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 24 }}>
+                <MiniStat theme={theme} label="Families" value={box.families} />
+                <MiniStat theme={theme} label="4-person meals" value={box.meals4p} accent />
+                <MiniStat theme={theme} label="2-person meals" value={box.meals2p} />
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontFamily: theme.mono, fontSize: 10, color: theme.muted, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                  Public recipe page
+
+              {/* QR block */}
+              {box.qrUrl && (
+                <div style={{
+                  padding: 16, borderRadius: 12, background: theme.bg,
+                  border: `1px solid ${theme.line}`, marginBottom: 24,
+                  display: 'flex', alignItems: 'center', gap: 16,
+                }}>
+                  <div style={{ padding: 5, background: '#fff', border: `1px solid ${theme.line}`, borderRadius: 8, flexShrink: 0 }}>
+                    <QR size={64} seed={box.id} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: theme.mono, fontSize: 10, color: theme.muted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>
+                      Public recipe page
+                    </div>
+                    <div style={{ fontFamily: theme.mono, fontSize: 12, color: theme.ink, wordBreak: 'break-all', lineHeight: 1.4 }}>
+                      {box.qrUrl}
+                    </div>
+                    <Button theme={theme} kind="secondary" size="sm" onClick={onOpenPublic} style={{ marginTop: 10 }}>Open page</Button>
+                  </div>
                 </div>
-                <div style={{ fontFamily: theme.mono, fontSize: 12, color: theme.ink, marginTop: 4, wordBreak: 'break-all' }}>
-                  {box.qrUrl}
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Button theme={theme} kind="secondary" size="sm" onClick={onOpenPublic}>Open</Button>
-                <Button theme={theme} kind="primary" size="sm" icon={Icon.print(theme.accentInk)} onClick={onPrint}>Print Label</Button>
+              )}
+
+              {/* Box contents */}
+              <SectionHeader theme={theme}>Box contents ({box.items.length} items)</SectionHeader>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {box.items.map(i => {
+                  const f = FOOD_CATALOG.find(x => x.id === i.id);
+                  if (!f) return null;
+                  return (
+                    <div key={i.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '8px 10px', borderRadius: 10,
+                      border: `1px solid ${theme.line}`, background: theme.paper,
+                    }}>
+                      <FoodThumb theme={theme} id={i.id} size={28} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, color: theme.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.name}</div>
+                        <div style={{ fontSize: 11, color: theme.muted }}>{f.measure}</div>
+                      </div>
+                      <div style={{ fontFamily: theme.mono, fontSize: 12, color: theme.ink, fontWeight: 600 }}>×{i.qty}</div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
-          )}
 
-          {/* Contents */}
-          <SectionHeader theme={theme}>Box contents ({box.items.length} items)</SectionHeader>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 22 }}>
-            {box.items.map(i => {
-              const f = FOOD_CATALOG.find(x => x.id === i.id);
-              if (!f) return null;
-              return (
-                <div key={i.id} style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '8px 10px', borderRadius: 10,
-                  border: `1px solid ${theme.line}`, background: theme.paper,
-                }}>
-                  <FoodThumb theme={theme} id={i.id} size={28} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, color: theme.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.name}</div>
-                    <div style={{ fontSize: 11, color: theme.muted }}>{f.measure}</div>
-                  </div>
-                  <div style={{ fontFamily: theme.mono, fontSize: 12, color: theme.ink, fontWeight: 600 }}>×{i.qty}</div>
-                </div>
-              );
-            })}
-          </div>
+            {/* Right column: recipes */}
+            <div style={{ padding: '24px 28px 40px', overflowY: 'auto' }}>
+              <SectionHeader theme={theme}>Generated recipes ({recipes.length})</SectionHeader>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {recipes.map(r => (
+                  <button key={r.id} onClick={() => setRecipeId(r.id)} style={{
+                    textAlign: 'left', padding: 16, borderRadius: 14,
+                    border: `1px solid ${theme.line}`, background: theme.paper,
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14,
+                    transition: 'border-color 140ms, background 140ms',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = theme.bg}
+                  onMouseLeave={e => e.currentTarget.style.background = theme.paper}>
+                    <div style={{
+                      width: 56, height: 56, borderRadius: 12, flexShrink: 0,
+                      position: 'relative', overflow: 'hidden',
+                      background: `radial-gradient(at 30% 30%, ${theme.soft}, ${theme.bg})`,
+                      border: `1px solid ${theme.line}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <svg viewBox="0 0 40 40" width="40" height="40" style={{ position: 'absolute', inset: 6 }}>
+                        <ellipse cx="20" cy="22" rx="15" ry="9" fill={theme.paper} stroke={theme.line} strokeWidth="0.8"/>
+                        <ellipse cx="20" cy="22" rx="11" ry="6" fill="none" stroke={theme.accent} strokeOpacity="0.4" strokeWidth="0.7"/>
+                      </svg>
+                      <div style={{
+                        position: 'relative', zIndex: 1,
+                        fontFamily: theme.display, fontSize: 20, fontWeight: theme.displayWeight,
+                        color: theme.accent, letterSpacing: theme.displayTracking,
+                      }}>{r.title.en[0]}</div>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontFamily: theme.display, fontWeight: theme.displayWeight, fontSize: 17,
+                        letterSpacing: theme.displayTracking,
+                      }}>{r.title.en}</div>
+                      <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                        <Chip theme={theme} tone="soft">{r.time}</Chip>
+                        <Chip theme={theme} tone="soft">Serves {r.servings}</Chip>
+                        {r.missing && <Chip theme={theme} tone="missing">+ {r.missing.en}</Chip>}
+                      </div>
+                    </div>
+                    {Icon.arrowR(theme.muted)}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-          {/* Recipes */}
-          <SectionHeader theme={theme}>Generated recipes ({recipes.length})</SectionHeader>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {recipes.map(r => (
-              <button key={r.id} onClick={() => setRecipeId(r.id)} style={{
-                textAlign: 'left', padding: 14, borderRadius: 12,
-                border: `1px solid ${theme.line}`, background: theme.paper,
-                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12,
-                transition: 'border-color 140ms, background 140ms',
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = theme.bg}
-              onMouseLeave={e => e.currentTarget.style.background = theme.paper}>
-                <div style={{
-                  width: 52, height: 52, borderRadius: 12, flexShrink: 0,
-                  position: 'relative', overflow: 'hidden',
-                  background: `radial-gradient(at 30% 30%, ${theme.soft}, ${theme.bg})`,
-                  border: `1px solid ${theme.line}`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <svg viewBox="0 0 40 40" width="40" height="40" style={{ position: 'absolute', inset: 6 }}>
-                    <ellipse cx="20" cy="22" rx="15" ry="9" fill={theme.paper} stroke={theme.line} strokeWidth="0.8"/>
-                    <ellipse cx="20" cy="22" rx="11" ry="6" fill="none" stroke={theme.accent} strokeOpacity="0.4" strokeWidth="0.7"/>
-                  </svg>
-                  <div style={{
-                    position: 'relative', zIndex: 1,
-                    fontFamily: theme.display, fontSize: 18, fontWeight: theme.displayWeight,
-                    color: theme.accent, letterSpacing: theme.displayTracking,
-                  }}>{r.title.en[0]}</div>
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontFamily: theme.display, fontWeight: theme.displayWeight, fontSize: 16,
-                    letterSpacing: theme.displayTracking,
-                  }}>{r.title.en}</div>
-                  <div style={{ display: 'flex', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
-                    <Chip theme={theme} tone="soft">{r.time}</Chip>
-                    <Chip theme={theme} tone="soft">Serves {r.servings}</Chip>
-                    {r.missing && <Chip theme={theme} tone="missing">+ {r.missing.en}</Chip>}
-                  </div>
-                </div>
-                {Icon.arrowR(theme.muted)}
-              </button>
-            ))}
           </div>
         </div>
 
@@ -179,7 +194,8 @@ function BoxDetailPanel({ theme, box, onClose, onAdvance, onOpenPublic, onPrint 
             onClose={() => setRecipeId(null)} />
         )}
       </aside>
-    </>
+    </>,
+    document.body
   );
 }
 
