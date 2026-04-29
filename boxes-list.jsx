@@ -84,9 +84,8 @@ function MysteryBoxesScreen({ theme, warehouse, onStartMenu, openWizard, onWizar
   const [region, setRegion] = useState('All warehouses');
   const [statusFilter, setStatusFilter] = useState('All statuses');
   const [query, setQuery] = useState('');
-  const [mode, setMode] = useState('list'); // list | wizard | public
+  const [mode, setMode] = useState('list'); // list | wizard
   const [selectedId, setSelectedId] = useState(null);
-  const [publicBoxId, setPublicBoxId] = useState(null);
   const [printBox, setPrintBox] = useState(null);
 
   useEffect(() => {
@@ -132,10 +131,6 @@ function MysteryBoxesScreen({ theme, warehouse, onStartMenu, openWizard, onWizar
 
   if (mode === 'wizard') {
     return <BoxWizard theme={theme} onCancel={() => setMode('list')} onSave={(b) => { saveBox(b); setMode('list'); setSelectedId(b.id); }} />;
-  }
-  if (mode === 'public' && publicBoxId) {
-    const b = boxes.find(x => x.id === publicBoxId);
-    return <PublicRecipePage theme={theme} box={b} onClose={() => { setMode('list'); setPublicBoxId(null); }} />;
   }
   if (printBox) {
     return <LabelScreen theme={theme} box={printBox} onDone={() => setPrintBox(null)} fromList />;
@@ -252,7 +247,7 @@ function MysteryBoxesScreen({ theme, warehouse, onStartMenu, openWizard, onWizar
           <BoxRow key={b.id} theme={theme} box={b} last={i === filtered.length - 1}
             selected={b.id === selectedId}
             onOpen={() => setSelectedId(b.id)}
-            onOpenPublic={() => { setPublicBoxId(b.id); setMode('public'); }}
+            onOpenPublic={() => window.open(getPublicUrl(b.id), '_blank')}
             onPrint={() => setPrintBox(b)} />
         ))}
       </div>
@@ -264,7 +259,7 @@ function MysteryBoxesScreen({ theme, warehouse, onStartMenu, openWizard, onWizar
           box={selected}
           onClose={() => setSelectedId(null)}
           onAdvance={(to) => advanceStatus(selected.id, to)}
-          onOpenPublic={() => { setPublicBoxId(selected.id); setMode('public'); }}
+          onOpenPublic={() => window.open(getPublicUrl(selected.id), '_blank')}
           onPrint={() => setPrintBox(selected)}
         />
       )}
@@ -377,7 +372,7 @@ function RowMenu({ theme, box, onOpen, onOpenPublic, onPrint }) {
   const items = [
     { label: 'View box details', action: onOpen },
     { label: 'View generated recipes', action: onOpen },
-    { label: 'View QR link', action: onOpenPublic, disabled: !box.qrUrl },
+    { label: 'View QR link', action: onOpenPublic },
     { label: '🖨  Print Label', action: onPrint, highlight: true },
   ];
   return (
