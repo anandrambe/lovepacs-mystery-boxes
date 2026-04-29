@@ -1,26 +1,107 @@
 // boxes-public.jsx — Public (QR-linked) recipe landing page — mobile-first, two-screen nav
 
-const RECIPE_HERO = {
-  'pantry-spag':  'assets/recipe-spaghetti.jpg',
-  'arroz-frijol': 'assets/recipe-ricebowl.jpg',
-  'oven-bake':    'assets/recipe-ricebowl.jpg',
-  'cowboy':       'assets/recipe-salad.jpg',
-};
-const HERO_FALLBACKS = ['assets/recipe-spaghetti.jpg', 'assets/recipe-salad.jpg', 'assets/recipe-ricebowl.jpg'];
+// ─────────────────────────────────────────────────────────────
+// Live backend
+// ─────────────────────────────────────────────────────────────
+const API_BASE_PUBLIC = 'https://lovepacs.up.railway.app';
 
-function recipeHero(id) {
-  if (RECIPE_HERO[id]) return RECIPE_HERO[id];
-  const h = Math.abs(Array.from(id).reduce((a, c) => a + c.charCodeAt(0), 0));
-  return HERO_FALLBACKS[h % HERO_FALLBACKS.length];
+// Normalize backend Recipe domain object → frontend recipe shape.
+// Supports bilingual output: Spanish fields from Gemini are persisted in DB
+// and returned in the API response.
+function normalizeApiRecipeForPublic(r) {
+  function parseSteps(raw) {
+    if (!raw) return [];
+    const lines = raw.split(/\n+/).map(s => s.trim()).filter(Boolean);
+    if (lines.length > 1) return lines.map(s => s.replace(/^\d+[\.\)\-]\s*/, '')).filter(Boolean);
+    const parts = raw.split(/(?<=[.!?])\s+(?=[A-ZÀ-ÿ])/);
+    return parts.length > 1 ? parts : (raw ? [raw] : []);
+  }
+
+  const stepsEn = parseSteps((r.instructions || '').trim());
+  const stepsEs = parseSteps((r.instructions_es || '').trim());
+
+  const ingredients = (r.ingredients || []).map(ing => ({
+    name:   { en: ing.name, es: ing.name_es || ing.name },
+    amount: {
+      en: [ing.amount, ing.unit].filter(Boolean).join(' '),
+      es: [ing.amount, ing.unit].filter(Boolean).join(' '),
+    },
+    source: ing.is_staple ? 'staple' : 'box',
+  }));
+  const missing = r.missing_items || [];
+  return {
+    id:            r.id,
+    title:         { en: r.name || 'Recipe', es: r.name_es || r.name || 'Receta' },
+    time:          r.cook_time || r.time || '30 min',
+    servings:      r.servings  || 4,
+    tags:          ['Home-cooked', ...(r.allergy_tags || []).slice(0, 2)],
+    equipment:     { en: r.equipment || 'stovetop', es: r.equipment_es || r.equipment || 'estufa' },
+    missing:       missing.length > 0 ? { en: missing[0], es: missing[0] } : null,
+    imageKeywords: r.image_keywords || '',
+    ingredients,
+    steps: {
+      en: stepsEn.length ? stepsEn : ['Follow the recipe instructions.'],
+      es: stepsEs.length ? stepsEs : (stepsEn.length ? stepsEn : ['Siga las instrucciones de la receta.']),
+    },
+  };
+}
+
+// recipeHero — delegates to shared recipeHeroUrl which uses the full recipe
+// object for keyword matching. Accepts either a recipe object or a bare id
+// string (legacy path — falls back to hash-based local asset).
+function recipeHero(recipeOrId) {
+  if (recipeOrId && typeof recipeOrId === 'object') return recipeHeroUrl(recipeOrId);
+  // bare id — build a minimal stub so recipeHeroUrl can still hash-fallback
+  return recipeHeroUrl({ id: recipeOrId || '', title: {}, tags: [], ingredients: [] });
 }
 
 function PublicRecipePage({ theme, box, onClose, isPreview = true }) {
-  const [lang, setLang]         = useState('en');
-  const [screen, setScreen]     = useState('home');   // 'home' | 'recipe'
+  const [lang, setLang]           = useState('en');
+  const [screen, setScreen]       = useState('home');
   const [activeIdx, setActiveIdx] = useState(0);
+  const [apiData, setApiData]     = useState(null);   // { recipes, items } from live API
+  const [apiLoading, setApiLoading] = useState(false);
   if (!box) return null;
 
-  const recipes = (box.recipes || []).map(id => RECIPES.find(r => r.id === id)).filter(Boolean);
+  // Fetch live data from Railway backend on mount
+  useEffect(() => {
+    const fetchLive = async () => {
+      setApiLoading(true);
+      try {
+        const [boxRes, recipesRes] = await Promise.all([
+          fetch(`${API_BASE_PUBLIC}/api/v1/boxes/${box.id}`),
+          fetch(`${API_BASE_PUBLIC}/api/v1/boxes/${box.id}/recipes?selected=true`),
+        ]);
+        if (!boxRes.ok || !recipesRes.ok) return;
+        const [boxData, recipesData] = await Promise.all([boxRes.json(), recipesRes.json()]);
+        const liveRecipes = (recipesData.recipes || []).map(normalizeApiRecipeForPublic);
+        // Always set apiData when the API responds successfully — even when 0 selected
+        // recipes are returned. This prevents the static fallback (which lists all 4
+        // demo recipes) from incorrectly appearing for real boxes where the staff
+        // simply hasn't made a selection yet.
+        const liveItems = (boxData.items || []).map(it => ({
+          id: it.id, name: it.name, measure: it.measure, qty: it.quantity,
+        }));
+        setApiData({ recipes: liveRecipes, items: liveItems });
+      } catch (_) {
+        // Silently fall back to static embedded data
+      } finally {
+        setApiLoading(false);
+      }
+    };
+    fetchLive();
+  }, [box.id]);
+
+  // Prefer live API data; fall back to data embedded in the box object
+  const recipes = apiData
+    ? apiData.recipes
+    : (box.recipes || []).map(r => {
+        if (r && typeof r === 'object') return r;
+        return RECIPES.find(x => x.id === r);
+      }).filter(Boolean);
+
+  const boxItems = apiData ? apiData.items : (box.items || []);
+
   const active  = recipes[activeIdx] || recipes[0];
 
   const T = {
@@ -154,7 +235,9 @@ function PublicRecipePage({ theme, box, onClose, isPreview = true }) {
               fontFamily: theme.display, fontWeight: theme.displayWeight,
               fontSize: 34, letterSpacing: theme.displayTracking, lineHeight: 1.05, marginBottom: 10,
             }}>
-              {T.subtitle(recipes.length)}
+              {apiLoading && recipes.length === 0
+                ? 'Loading your meals…'
+                : T.subtitle(recipes.length)}
             </div>
             <div style={{ fontSize: 15, color: theme.muted, lineHeight: 1.65 }}>
               {T.intro}
@@ -167,6 +250,29 @@ function PublicRecipePage({ theme, box, onClose, isPreview = true }) {
               fontFamily: theme.mono, fontSize: 10, color: theme.muted,
               textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 14,
             }}>{T.menuTitle}</div>
+
+            {/* When the API responded but no recipes are selected yet, show a
+                friendly waiting state rather than a blank page. */}
+            {!apiLoading && apiData && recipes.length === 0 && (
+              <div style={{
+                textAlign: 'center', padding: '40px 20px',
+                borderRadius: 16, background: theme.paper,
+                border: `1px solid ${theme.line}`,
+              }}>
+                <div style={{ fontSize: 32, marginBottom: 12 }}>👩‍🍳</div>
+                <div style={{
+                  fontFamily: theme.display, fontWeight: theme.displayWeight,
+                  fontSize: 20, letterSpacing: theme.displayTracking,
+                }}>
+                  {lang === 'es' ? 'Recetas en camino…' : 'Recipes coming soon…'}
+                </div>
+                <div style={{ fontSize: 13, color: theme.muted, marginTop: 8, lineHeight: 1.6 }}>
+                  {lang === 'es'
+                    ? 'Tu voluntario Lovepacs aún está seleccionando las recetas para esta caja. ¡Vuelve pronto!'
+                    : 'Your Lovepacs volunteer is still selecting recipes for this box. Check back soon!'}
+                </div>
+              </div>
+            )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {recipes.map((r, i) => (
@@ -184,7 +290,7 @@ function PublicRecipePage({ theme, box, onClose, isPreview = true }) {
                   {/* Photo */}
                   <div style={{ width: 100, flexShrink: 0, position: 'relative', overflow: 'hidden' }}>
                     <img
-                      src={recipeHero(r.id)}
+                      src={recipeHero(r)}
                       alt={r.title[lang]}
                       style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                     />
@@ -238,25 +344,29 @@ function PublicRecipePage({ theme, box, onClose, isPreview = true }) {
               marginTop: 12, borderRadius: 14, overflow: 'hidden',
               border: `1px solid ${theme.line}`,
             }}>
-              {box.items.map((i, idx) => {
+              {boxItems.map((i, idx) => {
                 const f = FOOD_CATALOG.find(x => x.id === i.id);
-                if (!f) return null;
+                // API items have a name field; static items look up via FOOD_CATALOG
+                const displayName = f
+                  ? (lang === 'en' ? f.name : f.nameEs)
+                  : (i.name || i.id);
+                const qty = i.qty ?? i.quantity ?? 1;
                 return (
-                  <div key={i.id} style={{
+                  <div key={i.id || idx} style={{
                     display: 'flex', alignItems: 'center', gap: 12,
                     padding: '10px 16px', background: theme.paper,
-                    borderBottom: idx < box.items.length - 1 ? `1px solid ${theme.line}` : 'none',
+                    borderBottom: idx < boxItems.length - 1 ? `1px solid ${theme.line}` : 'none',
                     minHeight: 52,
                   }}>
                     <FoodThumb theme={theme} id={i.id} size={28} />
                     <span style={{ flex: 1, fontSize: 15, color: theme.ink }}>
-                      {lang === 'en' ? f.name : f.nameEs}
+                      {displayName}
                     </span>
                     <span style={{
                       fontFamily: theme.mono, fontSize: 13, color: theme.muted,
                       background: theme.bg, padding: '3px 10px', borderRadius: 999,
                       border: `1px solid ${theme.line}`,
-                    }}>×{i.qty}</span>
+                    }}>×{qty}</span>
                   </div>
                 );
               })}
@@ -289,7 +399,7 @@ function PublicRecipePage({ theme, box, onClose, isPreview = true }) {
             {/* Full-bleed photo hero */}
             <div style={{ position: 'relative', height: 240, overflow: 'hidden', background: theme.soft }}>
               <img
-                src={recipeHero(active.id)}
+                src={recipeHero(active)}
                 alt={active.title[lang]}
                 style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
               />
