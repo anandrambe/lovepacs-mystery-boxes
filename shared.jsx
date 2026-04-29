@@ -56,25 +56,45 @@ const Icon = {
   sparkle: (c='currentColor') => <svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 1l1.2 3.3L11.5 5.5 8.2 6.7 7 10 5.8 6.7 2.5 5.5 5.8 4.3z" fill={c}/><circle cx="11.5" cy="11" r="1.2" fill={c}/></svg>,
 };
 
-// Real scannable QR code — generated via api.qrserver.com (free, no auth).
-// Pass the public URL as `seed`; if no protocol prefix, https:// is added.
+// Fake-but-deterministic QR code (just a pretty visual, not scannable)
 function QR({ size = 200, seed = 'LP', color = '#111', bg = '#fff' }) {
-  const data = seed.startsWith('http') ? seed : `https://${seed}`;
-  const hex  = (c) => c.replace('#', '');
-  const src  = `https://api.qrserver.com/v1/create-qr-code/` +
-    `?size=${size}x${size}` +
-    `&data=${encodeURIComponent(data)}` +
-    `&color=${hex(color)}` +
-    `&bgcolor=${hex(bg)}` +
-    `&format=png&qzone=1`;
+  const n = 25;
+  const cells = useMemo(() => {
+    // Simple hash
+    let h = 0;
+    for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+    const grid = [];
+    for (let y = 0; y < n; y++) {
+      const row = [];
+      for (let x = 0; x < n; x++) {
+        h = (h * 1103515245 + 12345) >>> 0;
+        row.push(((h >> 8) & 0xff) < 128);
+      }
+      grid.push(row);
+    }
+    // Force finder squares
+    const setFinder = (ox, oy) => {
+      for (let y = 0; y < 7; y++) for (let x = 0; x < 7; x++) {
+        const edge = x===0||x===6||y===0||y===6;
+        const inner = x>=2&&x<=4&&y>=2&&y<=4;
+        grid[oy+y][ox+x] = edge || inner;
+      }
+      for (let y = -1; y <= 7; y++) for (let x = -1; x <= 7; x++) {
+        if ((x===-1||x===7||y===-1||y===7) && ox+x>=0 && ox+x<n && oy+y>=0 && oy+y<n) {
+          grid[oy+y][ox+x] = false;
+        }
+      }
+    };
+    setFinder(0, 0); setFinder(n-7, 0); setFinder(0, n-7);
+    return grid;
+  }, [seed]);
+  const cell = size / n;
   return (
-    <img
-      src={src}
-      width={size}
-      height={size}
-      alt="QR code"
-      style={{ display: 'block', imageRendering: 'pixelated' }}
-    />
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ display: 'block', background: bg }}>
+      {cells.map((row, y) => row.map((on, x) => on && (
+        <rect key={`${x}-${y}`} x={x*cell} y={y*cell} width={cell} height={cell} fill={color} />
+      )))}
+    </svg>
   );
 }
 
