@@ -93,26 +93,24 @@ function BoxDetailPanel({ theme, box, onClose, onAdvance, onOpenPublic, onPrint 
               </div>
 
               {/* QR block */}
-              {box.qrUrl && (
-                <div style={{
-                  padding: 16, borderRadius: 12, background: theme.bg,
-                  border: `1px solid ${theme.line}`, marginBottom: 24,
-                  display: 'flex', alignItems: 'center', gap: 16,
-                }}>
-                  <div style={{ padding: 5, background: '#fff', border: `1px solid ${theme.line}`, borderRadius: 8, flexShrink: 0 }}>
-                    <QR size={64} seed={box.id} />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontFamily: theme.mono, fontSize: 10, color: theme.muted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>
-                      Public recipe page
-                    </div>
-                    <div style={{ fontFamily: theme.mono, fontSize: 12, color: theme.ink, wordBreak: 'break-all', lineHeight: 1.4 }}>
-                      {box.qrUrl}
-                    </div>
-                    <Button theme={theme} kind="secondary" size="sm" onClick={onOpenPublic} style={{ marginTop: 10 }}>Open page</Button>
-                  </div>
+              <div style={{
+                padding: 16, borderRadius: 12, background: theme.bg,
+                border: `1px solid ${theme.line}`, marginBottom: 24,
+                display: 'flex', alignItems: 'center', gap: 16,
+              }}>
+                <div style={{ padding: 5, background: '#fff', border: `1px solid ${theme.line}`, borderRadius: 8, flexShrink: 0 }}>
+                  <QR size={64} seed={getPublicUrl(box.id)} />
                 </div>
-              )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: theme.mono, fontSize: 10, color: theme.muted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>
+                    Public recipe page
+                  </div>
+                  <div style={{ fontFamily: theme.mono, fontSize: 12, color: theme.ink, wordBreak: 'break-all', lineHeight: 1.4 }}>
+                    {getPublicUrl(box.id)}
+                  </div>
+                  <Button theme={theme} kind="secondary" size="sm" onClick={onOpenPublic} style={{ marginTop: 10 }}>Open page</Button>
+                </div>
+              </div>
 
               {/* Box contents */}
               <SectionHeader theme={theme}>Box contents ({box.items.length} items)</SectionHeader>
@@ -263,15 +261,17 @@ function RecipeDetailSubPanel({ theme, recipe, onClose }) {
   const fIdx = Math.abs(Array.from(recipe.id).reduce((a, c) => a + c.charCodeAt(0), 0)) % FALLBACKS.length;
   const heroSrc = HERO[recipe.id] || FALLBACKS[fIdx];
 
-  return (
+  // Portal to document.body so position:fixed is always viewport-relative,
+  // whether opened from the wizard (scrollable page) or the detail panel.
+  return ReactDOM.createPortal(
     <>
       <div onClick={onClose} style={{
-        position: 'absolute', inset: 0, background: 'rgba(18,22,20,0.18)', zIndex: 2,
+        position: 'fixed', inset: 0, background: 'rgba(18,22,20,0.28)', zIndex: 200,
       }} />
       <div style={{
-        position: 'absolute', top: 0, right: 0, height: '100%', width: 440,
+        position: 'fixed', top: 0, right: 0, bottom: 0, width: 440,
         background: theme.paper, borderLeft: `1px solid ${theme.line}`,
-        zIndex: 3, display: 'flex', flexDirection: 'column',
+        zIndex: 201, display: 'flex', flexDirection: 'column',
         boxShadow: '-20px 0 48px -16px rgba(0,0,0,0.22)',
         animation: 'slideIn 220ms cubic-bezier(0.2, 0.8, 0.2, 1)',
       }}>
@@ -399,7 +399,8 @@ function RecipeDetailSubPanel({ theme, recipe, onClose }) {
           </div>
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 }
 
