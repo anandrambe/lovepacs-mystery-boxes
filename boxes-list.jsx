@@ -80,7 +80,7 @@ function StatusStepper({ status, theme, compact }) {
 
 // ── Listing page ───────────────────────────────────────────────────────────
 function MysteryBoxesScreen({ theme, warehouse, onStartMenu, openWizard, onWizardOpened }) {
-  const [boxes, setBoxes] = useState(MYSTERY_BOXES);
+  const [boxes, setBoxes] = useState(LOVE_BOXES);
   const [region, setRegion] = useState('All warehouses');
   const [statusFilter, setStatusFilter] = useState('All statuses');
   const [query, setQuery] = useState('');
