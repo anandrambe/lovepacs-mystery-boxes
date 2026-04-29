@@ -1,6 +1,54 @@
 // boxes-wizard.jsx — Create a new Mystery Box (4-step wizard)
 // Flow: 1) Inventory (catalog + cart)  2) Recipes  3) Finalize  4) Box identity
 
+// ─────────────────────────────────────────────────────────────
+// Live backend — Gemini recipe generation via Railway
+// ─────────────────────────────────────────────────────────────
+const API_BASE = 'https://lovepacs.up.railway.app';
+
+// Convert the backend's Recipe domain object into the UI recipe shape.
+// Supports bilingual output: Spanish fields (name_es, instructions_es,
+// equipment_es, ingredient name_es) are provided by Gemini and persist in DB.
+function normalizeApiRecipe(r) {
+  function parseSteps(raw) {
+    if (!raw) return [];
+    const lines = raw.split(/\n+/).map(s => s.trim()).filter(Boolean);
+    if (lines.length > 1) return lines.map(s => s.replace(/^\d+[\.\)\-]\s*/, '')).filter(Boolean);
+    // Sentence-split fallback (handles both English & Spanish sentence endings)
+    const parts = raw.split(/(?<=[.!?])\s+(?=[A-ZÀ-ÿ])/);
+    return parts.length > 1 ? parts : (raw ? [raw] : []);
+  }
+
+  const stepsEn = parseSteps((r.instructions || '').trim());
+  const stepsEs = parseSteps((r.instructions_es || '').trim());
+
+  const ingredients = (r.ingredients || []).map(ing => ({
+    name:   { en: ing.name, es: ing.name_es || ing.name },
+    amount: {
+      en: [ing.amount, ing.unit].filter(Boolean).join(' '),
+      es: [ing.amount, ing.unit].filter(Boolean).join(' '),
+    },
+    source: ing.is_staple ? 'staple' : 'box',
+  }));
+
+  const missing = r.missing_items || [];
+  return {
+    id:            r.id,
+    title:         { en: r.name || 'Recipe', es: r.name_es || r.name || 'Receta' },
+    time:          r.cook_time || r.time || '30 min',
+    servings:      r.servings  || 4,
+    tags:          ['Home-cooked', ...(r.allergy_tags || []).slice(0, 2)],
+    equipment:     { en: r.equipment || 'stovetop', es: r.equipment_es || r.equipment || 'estufa' },
+    missing:       missing.length > 0 ? { en: missing[0], es: missing[0] } : null,
+    imageKeywords: r.image_keywords || '',
+    ingredients,
+    steps: {
+      en: stepsEn.length ? stepsEn : ['Follow the recipe instructions.'],
+      es: stepsEs.length ? stepsEs : (stepsEn.length ? stepsEn : ['Siga las instrucciones de la receta.']),
+    },
+  };
+}
+
 function BoxWizard({ theme, onCancel, onSave }) {
   const [step, setStep] = useState(1);
   const [finalizedBox, setFinalizedBox] = useState(null);
@@ -34,6 +82,19 @@ function BoxWizard({ theme, onCancel, onSave }) {
   const [custom, setCustom] = useState('');
   const [detailRecipeId, setDetailRecipeId] = useState(null);
 
+  // API state — tracks the backend box ID so we can re-generate and select
+  const [apiBoxId, setApiBoxId] = useState(null);
+  const [apiError, setApiError] = useState(null);
+
+  // Look up a recipe by ID: check live candidates first, then static RECIPES
+  const getRecipeObj = (id) => {
+    if (candidates) {
+      const c = candidates.find(r => r.id === id);
+      if (c) return c;
+    }
+    return RECIPES.find(r => r.id === id);
+  };
+
   const stock = {
     spaghetti: 184, marinara: 212, tuna: 96, blackbeans: 340, ricewhite: 142,
     cornkernels: 228, chickenbroth: 76, tomatoes: 198, peanutbutter: 54, oats: 120,
@@ -52,46 +113,142 @@ function BoxWizard({ theme, onCancel, onSave }) {
   const setQty = (id, qty) => setItems(is => is.map(i => i.id === id ? { ...i, qty: Math.max(0, Math.min(stock[id] || 0, qty)) } : i).filter(i => i.qty > 0));
   const removeItem = (id) => setItems(is => is.filter(i => i.id !== id));
 
-  const generate = () => {
+  const generate = async () => {
     setGenerating(true);
+    setApiError(null);
     setStep(2);
-    setTimeout(() => {
+
+    try {
+      // Build item list using FOOD_CATALOG names (what the AI needs to reason about)
+      const apiItems = items.map(i => {
+        const f = FOOD_CATALOG.find(x => x.id === i.id);
+        return { name: f ? f.name : i.id, measure: f ? f.measure : '', quantity: i.qty };
+      });
+
+      // 1 — Create box in backend
+      const boxRes = await fetch(`${API_BASE}/api/v1/boxes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: dispatchDate || new Date().toISOString().slice(0, 10),
+          event_name: event || 'standard',
+          warehouse: region,
+          servings: Math.max(families, 1),
+          items: apiItems,
+        }),
+      });
+      if (!boxRes.ok) throw new Error(`Box creation: ${boxRes.status}`);
+      const boxData = await boxRes.json();
+      setApiBoxId(boxData.id);
+
+      // 2 — Generate recipes with Gemini
+      const genRes = await fetch(`${API_BASE}/api/v1/boxes/${boxData.id}/recipes/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cuisine_type: cuisine || '',
+          language: 'en',
+          allergies: [],
+          system_prompt: custom || '',
+        }),
+      });
+      if (!genRes.ok) throw new Error(`Recipe generation: ${genRes.status}`);
+      const genData = await genRes.json();
+      const normalized = (genData.recipes || []).slice(0, 4).map(normalizeApiRecipe);
+      if (normalized.length === 0) throw new Error('No recipes returned from API');
+
+      setCandidates(normalized);
+      setSelectedRecipes([normalized[0]?.id, normalized[2]?.id].filter(Boolean));
+    } catch (err) {
+      console.warn('API error — falling back to static recipes:', err.message);
+      setApiError(err.message);
+      // Graceful fallback to static recipe set
       let rset = RECIPES.slice(0, 4);
       if (dietary === 'Vegetarian') rset = rset.filter(r => !r.ingredients.some(i => i.name.en.toLowerCase().includes('tuna')));
       if (timePref === 'Under 30 min') rset = rset.filter(r => parseInt(r.time) < 30);
       if (rset.length < 4) rset = RECIPES.slice(0, 4);
       const four = rset.slice(0, 4);
       setCandidates(four);
-      // Select one top-row (idx 0) and one bottom-row (idx 2) to show
-      // the selected/unselected states side-by-side on first view.
       setSelectedRecipes([four[0]?.id, four[2]?.id].filter(Boolean));
+    } finally {
       setGenerating(false);
-    }, 1200);
+    }
   };
 
   const toggleRecipe = (id) => setSelectedRecipes(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
 
-  const regenerate = () => {
+  const regenerate = async () => {
     setGenerating(true);
     setCandidates(null);
-    setTimeout(() => {
+
+    try {
+      if (!apiBoxId) throw new Error('No API box to regenerate for');
+
+      const genRes = await fetch(`${API_BASE}/api/v1/boxes/${apiBoxId}/recipes/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cuisine_type: cuisine || '',
+          language: 'en',
+          allergies: [],
+          system_prompt: custom || '',
+        }),
+      });
+      if (!genRes.ok) throw new Error(`Regenerate: ${genRes.status}`);
+      const data = await genRes.json();
+      const normalized = (data.recipes || []).slice(0, 4).map(normalizeApiRecipe);
+      if (normalized.length === 0) throw new Error('No recipes');
+      setCandidates(normalized);
+      setSelectedRecipes([normalized[0]?.id, normalized[2]?.id].filter(Boolean));
+    } catch (err) {
+      console.warn('Regenerate fallback:', err.message);
       const rset = [...RECIPES].reverse().slice(0, 4);
       setCandidates(rset);
       setSelectedRecipes([rset[0]?.id, rset[2]?.id].filter(Boolean));
+    } finally {
       setGenerating(false);
-    }, 1100);
+    }
   };
 
-  const finalize = () => {
-    const id = boxLabel.trim() || `MB-2026-${Math.floor(Math.random() * 900 + 100)}`;
-    const qrUrl = `lovepacs.org/b/mb-${region.toLowerCase().slice(0, 3)}-${id.slice(-4)}`;
+  const finalize = async () => {
+    // Prefer the API-generated box ID (e.g. 20260428_spring_frisco)
+    const yr  = new Date().getFullYear();
+    const wh  = warehouseCode(region || 'Frisco');
+    const seq = String(LOVE_BOXES.filter(b => b.id.startsWith(`LB-${yr}-${wh}-`)).length + 1).padStart(4, '0');
+    const id  = apiBoxId || boxLabel.trim() || `LB-${yr}-${wh}-${seq}`;
+
+    // Persist the staff's recipe selection to the backend.
+    // NOTE: fetch() only throws on network failure, NOT on 4xx/5xx HTTP errors,
+    // so we must explicitly check res.ok to catch server-side failures.
+    if (apiBoxId && selectedRecipes.length > 0) {
+      try {
+        const selectRes = await fetch(`${API_BASE}/api/v1/boxes/${apiBoxId}/recipes/select`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ recipe_ids: selectedRecipes }),
+        });
+        if (!selectRes.ok) {
+          throw new Error(`Recipe select returned HTTP ${selectRes.status}`);
+        }
+      } catch (e) {
+        console.warn('Recipe select API error (QR page may not reflect selection):', e.message);
+        // Surface the warning but don't block finalization —
+        // the box is created; staff can re-select later if needed.
+        setApiError(`Warning: recipe selection may not have saved (${e.message}). The QR page will show all recipes until this is resolved.`);
+      }
+    }
+
+    // Store full recipe objects so the QR page can render without an extra fetch
+    const recipeObjs = selectedRecipes
+      .map(rid => getRecipeObj(rid))
+      .filter(Boolean);
+
     const box = {
       id, region, address: address || '—', event, dispatchDate,
       families, meals4p, meals2p,
-      recipesCount: selectedRecipes.length,
+      recipesCount: recipeObjs.length,
       status: 'Finalized',
-      qrUrl,
-      items, recipes: selectedRecipes,
+      items, recipes: recipeObjs,
       notes: boxNotes, printed: false,
     };
     onSave(box);
@@ -151,7 +308,8 @@ function BoxWizard({ theme, onCancel, onSave }) {
           onRegenerate={regenerate}
           onDetail={setDetailRecipeId}
           onBack={() => setStep(1)}
-          onNext={() => setStep(3)} />
+          onNext={() => setStep(3)}
+          items={items} />
       )}
 
       {step === 3 && (
@@ -167,7 +325,7 @@ function BoxWizard({ theme, onCancel, onSave }) {
           boxLabel={boxLabel} setBoxLabel={setBoxLabel}
           boxNotes={boxNotes} setBoxNotes={setBoxNotes}
           items={items}
-          selectedRecipes={selectedRecipes.map(id => RECIPES.find(r => r.id === id)).filter(Boolean)}
+          selectedRecipes={selectedRecipes.map(id => getRecipeObj(id)).filter(Boolean)}
           onBack={() => setStep(2)}
           onNext={() => setStep(4)} />
       )}
@@ -180,13 +338,13 @@ function BoxWizard({ theme, onCancel, onSave }) {
           meals4p={meals4p} meals2p={meals2p}
           boxLabel={boxLabel} boxNotes={boxNotes}
           items={items}
-          selectedRecipes={selectedRecipes.map(id => RECIPES.find(r => r.id === id)).filter(Boolean)}
+          selectedRecipes={selectedRecipes.map(id => getRecipeObj(id)).filter(Boolean)}
           onBack={() => setStep(3)} onFinalize={finalize} />
       )}
 
       {detailRecipeId && (
         <RecipeDetailSubPanel theme={theme}
-          recipe={RECIPES.find(r => r.id === detailRecipeId)}
+          recipe={getRecipeObj(detailRecipeId)}
           onClose={() => setDetailRecipeId(null)} />
       )}
     </div>
@@ -474,7 +632,18 @@ function Step2Recipes({
   theme, generating, candidates, selected, toggleRecipe,
   cuisine, setCuisine, dietary, setDietary, timePref, setTimePref,
   custom, setCustom, onRegenerate, onDetail, onBack, onNext,
+  items,
 }) {
+  // ── Smooth completion: detect when Gemini finishes and show recipe-reveal phase ──
+  const [completing, setCompleting] = useState(false);
+  const wasGenerating = React.useRef(generating);
+  useEffect(() => {
+    if (wasGenerating.current && !generating && candidates?.length > 0) {
+      setCompleting(true);  // hand off to GeneratingCard's "done" phase
+    }
+    wasGenerating.current = generating;
+  }, [generating, candidates]);
+
   return (
     <div>
       <div style={{
@@ -557,7 +726,14 @@ function Step2Recipes({
         </div>
       </div>
 
-      {generating || !candidates ? <GeneratingCard theme={theme} /> : (
+      {(generating || completing || !candidates) ? (
+        <GeneratingCard
+          theme={theme}
+          items={items || []}
+          completingRecipes={completing ? candidates.map(r => r.title.en) : null}
+          onComplete={() => setCompleting(false)}
+        />
+      ) : (
         <>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
             <div>
@@ -682,19 +858,7 @@ function RecipeCandidateCard({ theme, recipe, size, selected, onToggle, onView }
     prev.current = selected;
   }, [selected]);
 
-  const heroImages = {
-    'pantry-spag': 'assets/recipe-spaghetti.jpg',
-    'arroz-frijol': 'assets/recipe-ricebowl.jpg',
-    'oven-bake': 'assets/recipe-ricebowl.jpg',
-    'cowboy': 'assets/recipe-salad.jpg',
-  };
-  const heroFallbacks = [
-    'assets/recipe-spaghetti.jpg',
-    'assets/recipe-salad.jpg',
-    'assets/recipe-ricebowl.jpg',
-  ];
-  const idx = Math.abs(Array.from(recipe.id).reduce((a, c) => a + c.charCodeAt(0), 0)) % heroFallbacks.length;
-  const heroSrc = heroImages[recipe.id] || heroFallbacks[idx];
+  const heroSrc = recipeHeroUrl(recipe);
 
   const boxIngredients = recipe.ingredients.filter(i => i.source === 'box');
   const extraCount = Math.max(0, boxIngredients.length - 3);
@@ -920,19 +1084,254 @@ function RecipeCandidateCard({ theme, recipe, size, selected, onToggle, onView }
   );
 }
 
-function GeneratingCard({ theme }) {
+// ─────────────────────────────────────────────────────────────────────────────
+// GeneratingCard — three-phase loading experience:
+//
+//  Phase 1 "ingredients"  Ingredient chips float into the pot (~3 s)
+//  Phase 2 "stages"       Gemini is thinking; staged progress labels (adaptive)
+//  Phase 3 "done"         Actual recipe titles check in one-by-one → 100%
+//                         then calls onComplete() to hand off to the recipe grid
+// ─────────────────────────────────────────────────────────────────────────────
+function GeneratingCard({ theme, items, completingRecipes = null, onComplete }) {
+  const [phase,       setPhase]       = useState('ingredients');
+  const [visible,     setVisible]     = useState(0);   // # ingredient chips shown
+  const [stageIdx,    setStageIdx]    = useState(0);   // active stage (0-3)
+  const [doneVisible, setDoneVisible] = useState(0);   // # recipe names revealed
+
+  const STAGES = [
+    { label: 'Scanning your pantry items',         pct: 22 },
+    { label: 'Crafting recipe combinations',        pct: 48 },
+    { label: 'Writing step-by-step instructions',  pct: 72 },
+    { label: 'Checking allergens & portion sizes', pct: 90 },
+  ];
+
+  const chips = (items || []).slice(0, 7).map(i => {
+    const f = FOOD_CATALOG.find(x => x.id === i.id);
+    return { id: i.id, label: f ? f.name : i.id };
+  });
+
+  // ── Phase 1: reveal ingredient chips ──────────────────────────────────────
+  useEffect(() => {
+    if (chips.length === 0) { setPhase('stages'); return; }
+    let count = 0;
+    const iv = setInterval(() => {
+      count++;
+      setVisible(count);
+      if (count >= chips.length) {
+        clearInterval(iv);
+        setTimeout(() => setPhase('stages'), 900);
+      }
+    }, 390);
+    return () => clearInterval(iv);
+  }, []);
+
+  // ── Phase 2: advance stages on a timer (continues until Gemini responds) ──
+  useEffect(() => {
+    if (phase !== 'stages') return;
+    const gaps = [2600, 3000, 3400];
+    let idx = 0;
+    const tick = () => {
+      // Only advance if we haven't entered the done phase yet
+      if (idx < STAGES.length - 1) {
+        idx++;
+        setStageIdx(idx);
+        if (idx < gaps.length) setTimeout(tick, gaps[idx]);
+      }
+    };
+    const t = setTimeout(tick, gaps[0]);
+    return () => clearTimeout(t);
+  }, [phase]);
+
+  // ── Phase 3: completingRecipes arrives → switch to "done" immediately ─────
+  useEffect(() => {
+    if (!completingRecipes) return;
+    setPhase('done');
+  }, [completingRecipes]);
+
+  // Reveal recipe names one-by-one, then call onComplete
+  useEffect(() => {
+    if (phase !== 'done' || !completingRecipes?.length) return;
+    let i = 0;
+    const iv = setInterval(() => {
+      i++;
+      setDoneVisible(i);
+      if (i >= completingRecipes.length) {
+        clearInterval(iv);
+        // Brief pause so user can read the last name, then hand off
+        setTimeout(() => onComplete?.(), 900);
+      }
+    }, 310);
+    return () => clearInterval(iv);
+  }, [phase]);
+
+  // Progress: 3% → 22/48/72/90% → 100%
+  const progress = phase === 'ingredients' ? 3
+    : phase === 'done' ? 100
+    : STAGES[stageIdx].pct;
+
   return (
     <div style={{
-      padding: 60, background: theme.paper, border: `1px solid ${theme.line}`,
-      borderRadius: 14, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
+      background: theme.paper, border: `1px solid ${theme.line}`,
+      borderRadius: 14, overflow: 'hidden',
     }}>
+      <style>{`
+        @keyframes chipIn {
+          from { opacity:0; transform:translateY(12px) scale(0.82); }
+          to   { opacity:1; transform:translateY(0) scale(1); }
+        }
+        @keyframes stageFadeUp {
+          from { opacity:0; transform:translateY(7px); }
+          to   { opacity:1; transform:translateY(0); }
+        }
+        @keyframes potBounce {
+          0%,100% { transform:rotate(-1.5deg) scale(1); }
+          45%     { transform:rotate(2deg) scale(1.08) translateY(-5px); }
+        }
+        @keyframes checkPop {
+          from { opacity:0; transform:scale(0.78) translateY(6px); }
+          to   { opacity:1; transform:scale(1) translateY(0); }
+        }
+        @keyframes pulse {
+          0%,100% { opacity:1; }
+          50%     { opacity:0.55; }
+        }
+      `}</style>
+
+      {/* ── Hairline progress bar ───────────────────────────────────── */}
+      <div style={{ height: 3, background: theme.bg }}>
+        <div style={{
+          height: '100%',
+          width: `${progress}%`,
+          background: `linear-gradient(90deg, ${theme.accent}cc, ${theme.accent})`,
+          borderRadius: '0 999px 999px 0',
+          transition: phase === 'done'
+            ? 'width 0.65s cubic-bezier(0.22,1,0.36,1)'
+            : 'width 1.6s cubic-bezier(0.4,0,0.2,1)',
+        }} />
+      </div>
+
       <div style={{
-        width: 48, height: 48, borderRadius: 999, background: theme.soft,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        animation: 'pulse 1.4s ease-in-out infinite',
-      }}>{Icon.sparkle(theme.accent)}</div>
-      <div style={{ fontFamily: theme.display, fontSize: 20, fontWeight: theme.displayWeight }}>Generating recipes…</div>
-      <div style={{ fontSize: 12, color: theme.muted, fontFamily: theme.mono }}>avg 2.1s</div>
+        padding: '44px 40px 52px',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 26,
+      }}>
+
+        {/* ══════════════════════════════════════════════════════════════
+            PHASE 1 — Ingredients floating into the pot
+        ══════════════════════════════════════════════════════════════ */}
+        {phase === 'ingredients' && (
+          <>
+            <div style={{
+              width: 68, height: 68, borderRadius: 999,
+              background: theme.soft, border: `2px solid ${theme.line}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30,
+              animation: visible >= chips.length ? 'potBounce 1.1s ease-in-out infinite' : 'none',
+            }}>🍲</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', maxWidth: 400 }}>
+              {chips.map((chip, i) => i < visible && (
+                <div key={chip.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 7,
+                  padding: '5px 13px 5px 7px', borderRadius: 999,
+                  background: theme.bg, border: `1px solid ${theme.line}`,
+                  fontSize: 13, color: theme.ink, fontFamily: theme.body,
+                  animation: 'chipIn 0.42s cubic-bezier(0.34,1.56,0.64,1) forwards',
+                }}>
+                  <FoodThumb theme={theme} id={chip.id} size={19} />
+                  {chip.label}
+                </div>
+              ))}
+            </div>
+            <div style={{ fontFamily: theme.mono, fontSize: 11, color: theme.muted, textTransform: 'uppercase', letterSpacing: '0.13em' }}>
+              Tossing {chips.length} ingredient{chips.length !== 1 ? 's' : ''} into the mix…
+            </div>
+          </>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════
+            PHASE 2 — Gemini is thinking; staged progress labels
+        ══════════════════════════════════════════════════════════════ */}
+        {phase === 'stages' && (
+          <>
+            <div style={{
+              width: 52, height: 52, borderRadius: 999, background: theme.soft,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              animation: 'pulse 1.4s ease-in-out infinite',
+            }}>{Icon.sparkle(theme.accent)}</div>
+            <div style={{
+              fontFamily: theme.display, fontWeight: theme.displayWeight,
+              fontSize: 20, letterSpacing: theme.displayTracking, textAlign: 'center',
+            }}>Generating recipes with AI</div>
+            <div key={stageIdx} style={{ textAlign: 'center', animation: 'stageFadeUp 0.35s ease-out forwards' }}>
+              <div style={{ fontFamily: theme.mono, fontSize: 10, color: theme.accent, textTransform: 'uppercase', letterSpacing: '0.14em', marginBottom: 8 }}>
+                {String(stageIdx + 1).padStart(2, '0')} / {String(STAGES.length).padStart(2, '0')}
+              </div>
+              <div style={{ fontSize: 14.5, color: theme.muted, lineHeight: 1.55 }}>{STAGES[stageIdx].label}</div>
+            </div>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              {STAGES.map((_, i) => (
+                <div key={i} style={{
+                  height: 8, borderRadius: 999,
+                  width: i === stageIdx ? 26 : 8,
+                  background: i <= stageIdx ? theme.accent : theme.line,
+                  transition: 'all 0.38s cubic-bezier(0.34,1.56,0.64,1)',
+                }} />
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════
+            PHASE 3 — Recipes ready: real names check in one-by-one
+        ══════════════════════════════════════════════════════════════ */}
+        {phase === 'done' && (
+          <>
+            <div style={{
+              width: 52, height: 52, borderRadius: 999,
+              background: theme.accent + '18', border: `1.5px solid ${theme.accent}44`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>{Icon.sparkle(theme.accent)}</div>
+
+            <div style={{
+              fontFamily: theme.display, fontWeight: theme.displayWeight,
+              fontSize: 20, letterSpacing: theme.displayTracking, textAlign: 'center',
+            }}>
+              {doneVisible < (completingRecipes || []).length
+                ? 'Recipes incoming…'
+                : '✨ Your recipes are ready!'}
+            </div>
+
+            {/* Recipe names check in with a spring pop */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 9, width: '100%', maxWidth: 390 }}>
+              {(completingRecipes || []).map((name, i) => i < doneVisible && (
+                <div key={name} style={{
+                  display: 'flex', alignItems: 'center', gap: 11,
+                  padding: '10px 15px', borderRadius: 11,
+                  background: theme.soft, border: `1px solid ${theme.accent}33`,
+                  animation: 'checkPop 0.3s cubic-bezier(0.34,1.56,0.64,1) forwards',
+                }}>
+                  <div style={{
+                    width: 22, height: 22, borderRadius: 999, flexShrink: 0,
+                    background: theme.accent,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>{Icon.check(theme.accentInk)}</div>
+                  <div style={{ fontSize: 13.5, fontFamily: theme.body, color: theme.ink }}>{name}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* All-ready pill dots — all lit */}
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              {STAGES.map((_, i) => (
+                <div key={i} style={{
+                  height: 8, borderRadius: 999, width: 8,
+                  background: theme.accent,
+                  transition: 'background 0.3s ease',
+                }} />
+              ))}
+            </div>
+          </>
+        )}
+
+      </div>
     </div>
   );
 }
@@ -946,7 +1345,10 @@ function Step3Finalize({
   items, selectedRecipes, onBack, onNext,
 }) {
   const canNext = region && dispatchDate;
-  const autoId = `MB-2026-${String(Math.abs(items.length * 17 + selectedRecipes.length * 31 + families)).padStart(3, '0').slice(0, 3)}`;
+  const yr3     = new Date().getFullYear();
+  const wh3     = warehouseCode(region || 'Frisco');
+  const seq3    = String(LOVE_BOXES.filter(b => b.id.startsWith(`LB-${yr3}-${wh3}-`)).length + 1).padStart(4, '0');
+  const autoId  = `LB-${yr3}-${wh3}-${seq3}`;
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 1fr', gap: 16, alignItems: 'start' }}>
@@ -1032,26 +1434,19 @@ function Step3Finalize({
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {selectedRecipes.map(r => {
-              const heroMap = {
-                'pantry-spag': 'assets/recipe-spaghetti.jpg',
-                'arroz-frijol': 'assets/recipe-ricebowl.jpg',
-                'oven-bake': 'assets/recipe-ricebowl.jpg',
-                'cowboy': 'assets/recipe-salad.jpg',
-              };
-              const fallbacks = ['assets/recipe-spaghetti.jpg', 'assets/recipe-salad.jpg', 'assets/recipe-ricebowl.jpg'];
-              const fIdx = Math.abs(Array.from(r.id).reduce((a, c) => a + c.charCodeAt(0), 0)) % fallbacks.length;
-              const heroSrc = heroMap[r.id] || fallbacks[fIdx];
+              const heroSrc = recipeHeroUrl(r);
               return (
                 <div key={r.id} style={{
                   borderRadius: 10,
                   border: `1px solid ${theme.line}`, background: theme.bg,
-                  display: 'flex', alignItems: 'stretch', overflow: 'hidden',
+                  display: 'flex', alignItems: 'center', overflow: 'hidden',
                 }}>
-                  <div style={{
-                    width: 64, flexShrink: 0,
-                    backgroundImage: `url(${heroSrc})`,
-                    backgroundSize: 'cover', backgroundPosition: 'center',
-                  }} />
+                  {/* Fixed-size thumbnail — same proportions as the Step 2 card hero */}
+                  <div style={{ width: 96, height: 72, flexShrink: 0, overflow: 'hidden', background: '#1f1a14' }}>
+                    <img src={heroSrc} alt={r.title.en} style={{
+                      width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block',
+                    }} />
+                  </div>
                   <div style={{
                     flex: 1, minWidth: 0, padding: '10px 12px',
                     display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8,
@@ -1140,19 +1535,16 @@ function Step4Preview({
   meals4p, meals2p, boxLabel, boxNotes,
   items, selectedRecipes, onBack, onFinalize,
 }) {
-  const autoId = `MB-2026-${String(Math.abs(items.length * 17 + selectedRecipes.length * 31 + families)).padStart(3, '0').slice(0, 3)}`;
+  const yr4     = new Date().getFullYear();
+  const wh4     = warehouseCode(region || 'Frisco');
+  const seq4    = String(LOVE_BOXES.filter(b => b.id.startsWith(`LB-${yr4}-${wh4}-`)).length + 1).padStart(4, '0');
+  const autoId  = `LB-${yr4}-${wh4}-${seq4}`;
   const finalId = boxLabel.trim() || autoId;
-  const publicUrl = `lovepacs.org/b/mb-${region.toLowerCase().slice(0,3)}-${finalId.slice(-4)}`;
+  const publicUrl = `${window.location.origin}/public.html?box=${encodeURIComponent(finalId)}`;
   const niceDate = new Date(dispatchDate + 'T00:00').toLocaleDateString('en-US',
     { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 
-  // Hero image pool for mini recipe thumbs
-  const heroImages = {
-    'pantry-spag': 'assets/recipe-spaghetti.jpg',
-    'arroz-frijol': 'assets/recipe-ricebowl.jpg',
-    'oven-bake': 'assets/recipe-ricebowl.jpg',
-    'cowboy': 'assets/recipe-salad.jpg',
-  };
+  // Hero images resolved per-recipe via shared recipeHeroUrl()
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
@@ -1281,16 +1673,18 @@ function Step4Preview({
             gap: 10,
           }}>
             {selectedRecipes.map(r => {
-              const heroSrc = heroImages[r.id] || 'assets/recipe-spaghetti.jpg';
+              const heroSrc = recipeHeroUrl(r);
               return (
                 <div key={r.id} style={{
                   border: `1px solid ${theme.line}`, borderRadius: 10,
                   overflow: 'hidden', background: theme.paper,
                 }}>
-                  <div style={{
-                    height: 86, backgroundImage: `url(${heroSrc})`,
-                    backgroundSize: 'cover', backgroundPosition: 'center',
-                  }} />
+                  {/* Fixed-height hero — <img> for consistent rendering across all recipes */}
+                  <div style={{ height: 110, overflow: 'hidden', background: '#1f1a14' }}>
+                    <img src={heroSrc} alt={r.title.en} style={{
+                      width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block',
+                    }} />
+                  </div>
                   <div style={{ padding: '10px 12px' }}>
                     <div style={{
                       fontFamily: theme.display, fontSize: 13, fontWeight: theme.displayWeight,
@@ -1299,7 +1693,7 @@ function Step4Preview({
                     <div style={{
                       fontFamily: theme.mono, fontSize: 10, color: theme.muted,
                       textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 4,
-                    }}>{r.time} · Serves {r.tags[2]?.includes('Serves') ? r.tags[2].replace(/\D/g, '') : '4'}</div>
+                    }}>{r.time} · Serves {r.servings || 4}</div>
                   </div>
                 </div>
               );
@@ -1462,7 +1856,13 @@ function LabelPrintSheet({ box }) {
         { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
     : '—';
   const recipeNames = (box.recipes || [])
-    .map(id => { const r = RECIPES.find(x => x.id === id); return r ? r.title.en : id; })
+    .map(r => {
+      if (typeof r === 'string') {
+        const x = RECIPES.find(x => x.id === r);
+        return x ? x.title.en : r;
+      }
+      return r?.title?.en || r?.name || r?.id || null;
+    })
     .filter(Boolean);
   const itemNames = (box.items || [])
     .map(i => { const f = FOOD_CATALOG.find(x => x.id === i.id); return f ? `${f.name} ×${i.qty}` : null; })
@@ -1563,11 +1963,11 @@ function LabelPrintSheet({ box }) {
           background: '#ffffff',
         }}>
           <div style={{ padding: 5, border: '1.5px solid #e0e0e0', borderRadius: 8, background: '#fff' }}>
-            <QR size={86} seed={box.qrUrl || box.id} color="#000" bg="#fff" />
+            <QR size={86} seed={getPublicUrl(box.id)} color="#000" bg="#fff" />
           </div>
           <div style={{ fontSize: 8, color: '#888', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>Scan for recipes</div>
           <div style={{ fontSize: 7.5, color: '#666', fontFamily: 'monospace', textAlign: 'center', wordBreak: 'break-all', maxWidth: 100 }}>
-            {box.qrUrl || `lovepacs.org/b/${box.id}`}
+            {getPublicUrl(box.id)}
           </div>
         </div>
       </div>
@@ -1619,7 +2019,7 @@ function LabelScreen({ theme, box, onDone, fromList }) {
         </div>
         <div style={{ display: 'flex', gap: 12, marginTop: 4 }}>
           <Button theme={theme} kind="secondary" size="md" onClick={onDone}>
-            {fromList ? '← Back to list' : 'Go to Love Boxes →'}
+            {fromList ? '← Back to order' : 'Go to Love Boxes →'}
           </Button>
           <Button theme={theme} kind="primary" size="md" icon={Icon.print(theme.accentInk)} onClick={handlePrint}>
             Print Label

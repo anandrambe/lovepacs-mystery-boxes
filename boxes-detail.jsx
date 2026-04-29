@@ -16,46 +16,55 @@ function BoxDetailPanel({ theme, box, onClose, onAdvance, onOpenPublic, onPrint 
     'Printed':    'Mark as dispatched',
   }[box.status];
 
-  return (
+  // Render via portal so position:fixed is relative to the true viewport,
+  // not the transform:scale() ancestor in the main layout.
+  return ReactDOM.createPortal(
     <>
       <div onClick={onClose} style={{
         position: 'fixed', inset: 0, background: 'rgba(18,22,20,0.32)',
         zIndex: 40, animation: 'fadeIn 180ms ease-out',
       }} />
       <aside style={{
-        position: 'fixed', top: 0, right: 0, height: '100vh', width: 620,
+        position: 'fixed', top: 0, right: 0, bottom: 0, left: 248,
         background: theme.paper, borderLeft: `1px solid ${theme.line}`,
         zIndex: 50, display: 'flex', flexDirection: 'column',
-        boxShadow: '-24px 0 50px -20px rgba(0,0,0,0.25)',
-        animation: 'slideIn 260ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+        boxShadow: '-24px 0 60px -20px rgba(0,0,0,0.2)',
+        animation: 'slideIn 280ms cubic-bezier(0.2, 0.8, 0.2, 1)',
       }}>
         <style>{`
-          @keyframes slideIn { from { transform: translateX(40px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-          @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+          @keyframes slideIn { from { transform: translateX(32px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+          @keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
         `}</style>
 
         {/* Header */}
-        <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${theme.line}` }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ fontFamily: theme.mono, fontSize: 11, color: theme.muted, textTransform: 'uppercase', letterSpacing: '0.12em' }}>
-                {box.region} · {new Date(box.dispatchDate + 'T00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+        <div style={{ padding: '24px 36px 20px', borderBottom: `1px solid ${theme.line}`, flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 24 }}>
+            {/* Left: ID + meta */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontFamily: theme.mono, fontSize: 11, color: theme.muted, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 6 }}>
+                {box.region} · {new Date(box.dispatchDate + 'T00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
               </div>
+              <div style={{
+                fontFamily: theme.display, fontWeight: theme.displayWeight,
+                fontSize: 32, letterSpacing: theme.displayTracking, lineHeight: 1.05,
+              }}>{box.id}</div>
+              <div style={{ fontSize: 14, color: theme.muted, marginTop: 5 }}>{box.event}{box.address && box.address !== '—' ? ` · ${box.address}` : ''}</div>
             </div>
-            <button onClick={onClose} style={{
-              width: 32, height: 32, borderRadius: 8, border: `1px solid ${theme.line}`,
-              background: 'transparent', cursor: 'pointer', color: theme.muted,
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            }}>{Icon.close(theme.muted)}</button>
+            {/* Right: actions + close */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+              {onPrint && (
+                <Button theme={theme} kind="secondary" size="sm" icon={Icon.print(theme.ink)} onClick={onPrint}>Print Label</Button>
+              )}
+              <button onClick={onClose} style={{
+                width: 34, height: 34, borderRadius: 8, border: `1px solid ${theme.line}`,
+                background: 'transparent', cursor: 'pointer', color: theme.muted,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              }}>{Icon.close(theme.muted)}</button>
+            </div>
           </div>
-          <div style={{
-            fontFamily: theme.display, fontWeight: theme.displayWeight,
-            fontSize: 26, letterSpacing: theme.displayTracking, lineHeight: 1.1,
-          }}>{box.id}</div>
-          <div style={{ fontSize: 13, color: theme.muted, marginTop: 4 }}>{box.event} · {box.address}</div>
 
-          {/* Status stepper */}
-          <div style={{ marginTop: 18, padding: '14px 16px', borderRadius: 12, background: theme.bg, border: `1px solid ${theme.line}` }}>
+          {/* Status stepper — full width */}
+          <div style={{ marginTop: 20, padding: '14px 18px', borderRadius: 12, background: theme.bg, border: `1px solid ${theme.line}` }}>
             <StatusStepper status={box.status} theme={theme} />
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 }}>
               <div style={{ fontSize: 12, color: theme.muted }}>
@@ -70,106 +79,129 @@ function BoxDetailPanel({ theme, box, onClose, onAdvance, onOpenPublic, onPrint 
           </div>
         </div>
 
-        {/* Body */}
-        <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px 40px' }}>
-          {/* Stats grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 22 }}>
-            <MiniStat theme={theme} label="Families" value={box.families} />
-            <MiniStat theme={theme} label="4-person meals" value={box.meals4p} accent />
-            <MiniStat theme={theme} label="2-person meals" value={box.meals2p} />
-          </div>
+        {/* Body — two-column layout */}
+        <div style={{ flex: 1, overflow: 'auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0, height: '100%' }}>
 
-          {/* QR action */}
-          {box.qrUrl && (
-            <div style={{
-              padding: 14, borderRadius: 12, background: theme.bg,
-              border: `1px solid ${theme.line}`, marginBottom: 22,
-              display: 'flex', alignItems: 'center', gap: 14,
-            }}>
-              <div style={{ padding: 4, background: '#fff', border: `1px solid ${theme.line}`, borderRadius: 6 }}>
-                <QR size={54} seed={box.id} />
+            {/* Left column: stats + QR + contents */}
+            <div style={{ padding: '24px 28px 40px', borderRight: `1px solid ${theme.line}`, overflowY: 'auto' }}>
+              {/* Stats */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 24 }}>
+                <MiniStat theme={theme} label="Recipes" value={recipes.length} accent />
+                <MiniStat theme={theme} label="Food items" value={box.items.length} />
+                <MiniStat theme={theme} label="Units packed" value={box.items.reduce((s, i) => s + i.qty, 0)} />
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontFamily: theme.mono, fontSize: 10, color: theme.muted, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                  Public recipe page
-                </div>
-                <div style={{ fontFamily: theme.mono, fontSize: 12, color: theme.ink, marginTop: 4, wordBreak: 'break-all' }}>
-                  {box.qrUrl}
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Button theme={theme} kind="secondary" size="sm" onClick={onOpenPublic}>Open</Button>
-                <Button theme={theme} kind="primary" size="sm" icon={Icon.print(theme.accentInk)} onClick={onPrint}>Print Label</Button>
-              </div>
-            </div>
-          )}
 
-          {/* Contents */}
-          <SectionHeader theme={theme}>Box contents ({box.items.length} items)</SectionHeader>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 22 }}>
-            {box.items.map(i => {
-              const f = FOOD_CATALOG.find(x => x.id === i.id);
-              if (!f) return null;
-              return (
-                <div key={i.id} style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '8px 10px', borderRadius: 10,
-                  border: `1px solid ${theme.line}`, background: theme.paper,
-                }}>
-                  <FoodThumb theme={theme} id={i.id} size={28} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, color: theme.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.name}</div>
-                    <div style={{ fontSize: 11, color: theme.muted }}>{f.measure}</div>
-                  </div>
-                  <div style={{ fontFamily: theme.mono, fontSize: 12, color: theme.ink, fontWeight: 600 }}>×{i.qty}</div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Recipes */}
-          <SectionHeader theme={theme}>Generated recipes ({recipes.length})</SectionHeader>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {recipes.map(r => (
-              <button key={r.id} onClick={() => setRecipeId(r.id)} style={{
-                textAlign: 'left', padding: 14, borderRadius: 12,
-                border: `1px solid ${theme.line}`, background: theme.paper,
-                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12,
-                transition: 'border-color 140ms, background 140ms',
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = theme.bg}
-              onMouseLeave={e => e.currentTarget.style.background = theme.paper}>
-                <div style={{
-                  width: 52, height: 52, borderRadius: 12, flexShrink: 0,
-                  position: 'relative', overflow: 'hidden',
-                  background: `radial-gradient(at 30% 30%, ${theme.soft}, ${theme.bg})`,
-                  border: `1px solid ${theme.line}`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <svg viewBox="0 0 40 40" width="40" height="40" style={{ position: 'absolute', inset: 6 }}>
-                    <ellipse cx="20" cy="22" rx="15" ry="9" fill={theme.paper} stroke={theme.line} strokeWidth="0.8"/>
-                    <ellipse cx="20" cy="22" rx="11" ry="6" fill="none" stroke={theme.accent} strokeOpacity="0.4" strokeWidth="0.7"/>
-                  </svg>
-                  <div style={{
-                    position: 'relative', zIndex: 1,
-                    fontFamily: theme.display, fontSize: 18, fontWeight: theme.displayWeight,
-                    color: theme.accent, letterSpacing: theme.displayTracking,
-                  }}>{r.title.en[0]}</div>
+              {/* QR block */}
+              <div style={{
+                padding: 16, borderRadius: 12, background: theme.bg,
+                border: `1px solid ${theme.line}`, marginBottom: 24,
+                display: 'flex', alignItems: 'center', gap: 16,
+              }}>
+                <div style={{ padding: 5, background: '#fff', border: `1px solid ${theme.line}`, borderRadius: 8, flexShrink: 0 }}>
+                  <QR size={64} seed={getPublicUrl(box.id)} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontFamily: theme.display, fontWeight: theme.displayWeight, fontSize: 16,
-                    letterSpacing: theme.displayTracking,
-                  }}>{r.title.en}</div>
-                  <div style={{ display: 'flex', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
-                    <Chip theme={theme} tone="soft">{r.time}</Chip>
-                    <Chip theme={theme} tone="soft">Serves {r.servings}</Chip>
-                    {r.missing && <Chip theme={theme} tone="missing">+ {r.missing.en}</Chip>}
+                  <div style={{ fontFamily: theme.mono, fontSize: 10, color: theme.muted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>
+                    Public recipe page
                   </div>
+                  <div style={{ fontFamily: theme.mono, fontSize: 12, color: theme.ink, wordBreak: 'break-all', lineHeight: 1.4 }}>
+                    {getPublicUrl(box.id)}
+                  </div>
+                  <Button theme={theme} kind="secondary" size="sm" onClick={onOpenPublic} style={{ marginTop: 10 }}>Open page</Button>
                 </div>
-                {Icon.arrowR(theme.muted)}
-              </button>
-            ))}
+              </div>
+
+              {/* Box contents */}
+              <SectionHeader theme={theme}>Box contents ({box.items.length} items)</SectionHeader>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {box.items.map(i => {
+                  const f = FOOD_CATALOG.find(x => x.id === i.id);
+                  if (!f) return null;
+                  return (
+                    <div key={i.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '8px 10px', borderRadius: 10,
+                      border: `1px solid ${theme.line}`, background: theme.paper,
+                    }}>
+                      <FoodThumb theme={theme} id={i.id} size={28} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, color: theme.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.name}</div>
+                        <div style={{ fontSize: 11, color: theme.muted }}>{f.measure}</div>
+                      </div>
+                      <div style={{ fontFamily: theme.mono, fontSize: 12, color: theme.ink, fontWeight: 600 }}>×{i.qty}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Right column: recipes */}
+            <div style={{ padding: '24px 28px 40px', overflowY: 'auto' }}>
+              <SectionHeader theme={theme}>Generated recipes ({recipes.length})</SectionHeader>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {recipes.map(r => {
+                  // Map recipe IDs to hero photos; hash-based fallback for any extras
+                  const HERO = {
+                    'pantry-spag':  'assets/recipe-spaghetti.jpg',
+                    'arroz-frijol': 'assets/recipe-ricebowl.jpg',
+                    'oven-bake':    'assets/recipe-ricebowl.jpg',
+                    'cowboy':       'assets/recipe-salad.jpg',
+                  };
+                  const FALLBACKS = [
+                    'assets/recipe-spaghetti.jpg',
+                    'assets/recipe-salad.jpg',
+                    'assets/recipe-ricebowl.jpg',
+                  ];
+                  const fIdx = Math.abs(Array.from(r.id).reduce((a, c) => a + c.charCodeAt(0), 0)) % FALLBACKS.length;
+                  const heroSrc = HERO[r.id] || FALLBACKS[fIdx];
+
+                  return (
+                  <button key={r.id} onClick={() => setRecipeId(r.id)} style={{
+                    textAlign: 'left', padding: 0, borderRadius: 14,
+                    border: `1px solid ${theme.line}`, background: theme.paper,
+                    cursor: 'pointer', display: 'flex', alignItems: 'stretch', gap: 0,
+                    overflow: 'hidden',
+                    transition: 'border-color 140ms, background 140ms',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = theme.accent}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = theme.line}>
+                    {/* Photo thumbnail */}
+                    <div style={{
+                      width: 72, flexShrink: 0,
+                      background: '#1f1a14',
+                      overflow: 'hidden',
+                    }}>
+                      <img
+                        src={heroSrc}
+                        alt={r.title.en}
+                        style={{
+                          width: '100%', height: '100%',
+                          objectFit: 'cover', objectPosition: 'center',
+                          display: 'block',
+                        }}
+                      />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0, padding: '14px 12px 14px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{
+                          fontFamily: theme.display, fontWeight: theme.displayWeight, fontSize: 16,
+                          letterSpacing: theme.displayTracking, lineHeight: 1.25,
+                        }}>{r.title.en}</div>
+                        <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                          <Chip theme={theme} tone="soft">{r.time}</Chip>
+                          <Chip theme={theme} tone="soft">Serves {r.servings}</Chip>
+                          {r.missing && <Chip theme={theme} tone="missing">+ {r.missing.en}</Chip>}
+                        </div>
+                      </div>
+                      {Icon.arrowR(theme.muted)}
+                    </div>
+                  </button>
+                  );
+                })}
+              </div>
+            </div>
+
           </div>
         </div>
 
@@ -179,7 +211,8 @@ function BoxDetailPanel({ theme, box, onClose, onAdvance, onOpenPublic, onPrint 
             onClose={() => setRecipeId(null)} />
         )}
       </aside>
-    </>
+    </>,
+    document.body
   );
 }
 
@@ -217,58 +250,99 @@ function RecipeDetailSubPanel({ theme, recipe, onClose }) {
   const boxIngs = recipe.ingredients.filter(i => i.source === 'box');
   const staples = recipe.ingredients.filter(i => i.source === 'staple');
   const missing = recipe.ingredients.filter(i => i.source === 'missing');
-  return (
+
+  const HERO = {
+    'pantry-spag':  'assets/recipe-spaghetti.jpg',
+    'arroz-frijol': 'assets/recipe-ricebowl.jpg',
+    'oven-bake':    'assets/recipe-ricebowl.jpg',
+    'cowboy':       'assets/recipe-salad.jpg',
+  };
+  const FALLBACKS = ['assets/recipe-spaghetti.jpg', 'assets/recipe-salad.jpg', 'assets/recipe-ricebowl.jpg'];
+  const fIdx = Math.abs(Array.from(recipe.id).reduce((a, c) => a + c.charCodeAt(0), 0)) % FALLBACKS.length;
+  const heroSrc = HERO[recipe.id] || FALLBACKS[fIdx];
+
+  // Portal to document.body so position:fixed is always viewport-relative,
+  // whether opened from the wizard (scrollable page) or the detail panel.
+  return ReactDOM.createPortal(
     <>
       <div onClick={onClose} style={{
-        position: 'absolute', inset: 0, background: 'rgba(18,22,20,0.18)', zIndex: 2,
+        position: 'fixed', inset: 0, background: 'rgba(18,22,20,0.28)', zIndex: 200,
       }} />
       <div style={{
-        position: 'absolute', top: 0, right: 0, height: '100%', width: '96%',
+        position: 'fixed', top: 0, right: 0, bottom: 0, width: 440,
         background: theme.paper, borderLeft: `1px solid ${theme.line}`,
-        zIndex: 3, display: 'flex', flexDirection: 'column',
-        boxShadow: '-24px 0 40px -20px rgba(0,0,0,0.25)',
+        zIndex: 201, display: 'flex', flexDirection: 'column',
+        boxShadow: '-20px 0 48px -16px rgba(0,0,0,0.22)',
         animation: 'slideIn 220ms cubic-bezier(0.2, 0.8, 0.2, 1)',
       }}>
-        <div style={{ padding: '18px 22px', borderBottom: `1px solid ${theme.line}`, display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button onClick={onClose} style={{
-            background: 'transparent', border: 'none', cursor: 'pointer',
-            fontSize: 13, color: theme.muted, display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '6px 8px', borderRadius: 6, fontFamily: theme.body,
-          }}>← Back</button>
-          <div style={{ flex: 1 }} />
+
+        {/* Hero image with overlaid back button + lang toggle */}
+        <div style={{ position: 'relative', height: 180, flexShrink: 0, background: '#1f1a14', overflow: 'hidden' }}>
+          <img src={heroSrc} alt={recipe.title.en} style={{
+            position: 'absolute', inset: 0, width: '100%', height: '100%',
+            objectFit: 'cover', objectPosition: 'center',
+          }} />
+          {/* Gradient so controls are readable over photo */}
           <div style={{
-            display: 'inline-flex', background: theme.bg, borderRadius: 8, padding: 2,
-            border: `1px solid ${theme.line}`,
+            position: 'absolute', inset: 0,
+            background: 'linear-gradient(to bottom, rgba(0,0,0,0.45) 0%, transparent 55%, rgba(0,0,0,0.35) 100%)',
+          }} />
+          {/* Top row: back + lang */}
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0,
+            padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           }}>
-            {['en', 'es'].map(l => (
-              <button key={l} onClick={() => setLang(l)} style={{
-                padding: '4px 10px', borderRadius: 6, border: 'none',
-                background: lang === l ? theme.paper : 'transparent',
-                fontFamily: theme.mono, fontSize: 11, textTransform: 'uppercase',
-                letterSpacing: '0.1em', cursor: 'pointer', color: theme.ink,
-                fontWeight: lang === l ? 600 : 400,
-                boxShadow: lang === l ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
-              }}>{l}</button>
-            ))}
+            <button onClick={onClose} style={{
+              background: 'rgba(0,0,0,0.32)', border: '1px solid rgba(255,255,255,0.18)',
+              borderRadius: 8, cursor: 'pointer', color: '#fff',
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '6px 12px', fontSize: 12, fontFamily: theme.body, backdropFilter: 'blur(4px)',
+            }}>← Back</button>
+            <div style={{
+              display: 'inline-flex', background: 'rgba(0,0,0,0.32)',
+              borderRadius: 8, padding: 2, border: '1px solid rgba(255,255,255,0.18)',
+              backdropFilter: 'blur(4px)',
+            }}>
+              {['en', 'es'].map(l => (
+                <button key={l} onClick={() => setLang(l)} style={{
+                  padding: '4px 10px', borderRadius: 6, border: 'none',
+                  background: lang === l ? 'rgba(255,255,255,0.92)' : 'transparent',
+                  fontFamily: theme.mono, fontSize: 11, textTransform: 'uppercase',
+                  letterSpacing: '0.1em', cursor: 'pointer',
+                  color: lang === l ? theme.ink : 'rgba(255,255,255,0.8)',
+                  fontWeight: lang === l ? 600 : 400,
+                }}>{l}</button>
+              ))}
+            </div>
+          </div>
+          {/* Title overlay at bottom of image */}
+          <div style={{
+            position: 'absolute', bottom: 0, left: 0, right: 0,
+            padding: '12px 18px 14px',
+          }}>
+            <div style={{
+              fontFamily: theme.display, fontWeight: theme.displayWeight,
+              fontSize: 22, letterSpacing: theme.displayTracking, lineHeight: 1.15,
+              color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,0.4)',
+              textWrap: 'pretty',
+            }}>{recipe.title[lang]}</div>
+            {lang === 'en' && (
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', fontStyle: 'italic', marginTop: 2 }}>
+                {recipe.title.es}
+              </div>
+            )}
           </div>
         </div>
 
-        <div style={{ flex: 1, overflow: 'auto', padding: '22px 24px 40px' }}>
-          <div style={{
-            fontFamily: theme.display, fontWeight: theme.displayWeight,
-            fontSize: 28, letterSpacing: theme.displayTracking, lineHeight: 1.1,
-          }}>{recipe.title[lang]}</div>
-          {lang === 'en' && (
-            <div style={{ fontSize: 13, color: theme.muted, fontStyle: 'italic', marginTop: 4 }}>{recipe.title.es}</div>
-          )}
+        {/* Chips row */}
+        <div style={{ padding: '12px 18px', borderBottom: `1px solid ${theme.line}`, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <Chip theme={theme} tone="soft">{Icon.clock(theme.muted)} {recipe.time}</Chip>
+          <Chip theme={theme} tone="soft">Serves {recipe.servings}</Chip>
+          {recipe.tags.map((t, i) => <Chip key={i} theme={theme} tone="soft">{t}</Chip>)}
+        </div>
 
-          <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
-            <Chip theme={theme} tone="soft">{Icon.clock(theme.muted)} {recipe.time}</Chip>
-            <Chip theme={theme} tone="soft">Serves {recipe.servings}</Chip>
-            {recipe.tags.map((t, i) => <Chip key={i} theme={theme} tone="soft">{t}</Chip>)}
-          </div>
-
-          <div style={{ marginTop: 22, display: 'grid', gridTemplateColumns: '1fr', gap: 18 }}>
+        <div style={{ flex: 1, overflow: 'auto', padding: '20px 20px 40px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 18 }}>
             {/* Ingredients */}
             <div style={{ padding: 16, background: theme.bg, borderRadius: 12, border: `1px solid ${theme.line}` }}>
               <SectionHeader theme={theme}>Ingredients</SectionHeader>
@@ -325,7 +399,8 @@ function RecipeDetailSubPanel({ theme, recipe, onClose }) {
           </div>
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 }
 
