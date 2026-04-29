@@ -114,7 +114,7 @@ function PublicRecipePage({ theme, box, onClose, isPreview = true }) {
       ingredients:   'Ingredients',
       steps:         'How to cook it',
       notes:         'Serving notes',
-      back:          '← Back to meals',
+      back:          'Back to meals',
       legend_box:    'in your box',
       legend_staple: 'pantry staple',
       legend_missing:"you'll need this",
@@ -131,7 +131,7 @@ function PublicRecipePage({ theme, box, onClose, isPreview = true }) {
       ingredients:   'Ingredientes',
       steps:         'Cómo cocinarlo',
       notes:         'Notas',
-      back:          '← Volver a las comidas',
+      back:          'Volver a las comidas',
       legend_box:    'en tu caja',
       legend_staple: 'despensa común',
       legend_missing:'necesitarás esto',
@@ -197,7 +197,7 @@ function PublicRecipePage({ theme, box, onClose, isPreview = true }) {
             {T.back}
           </button>
         ) : (
-          <LovepacsLogo height={28} />
+          <LovepacsLogo height={38} />
         )}
         <div style={{
           display: 'inline-flex', background: theme.bg, borderRadius: 999,
